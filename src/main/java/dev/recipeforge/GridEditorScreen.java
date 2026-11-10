@@ -2,12 +2,12 @@ package dev.recipeforge;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -32,25 +32,34 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * The 3x3 crafting grid editor. Click a square, click an item on the right.
- * Used both for editing an existing crafting recipe and for making a new one.
+ * The picture editor for Minecraft's own stations: crafting table (3x3 grid), furnace, blast furnace,
+ * smoker, campfire, stonecutter and smithing table. Click a square, then click an item on the right.
  */
 public class GridEditorScreen extends ForgeScreen {
-    private static final int STEP = 22;   // distance between grid squares
-    private static final int BOX = 20;    // size of a grid square
+    private enum Layout { CRAFTING, COOKING, STONECUTTING, SMITHING }
+
+    private static final int STEP = 22;   // distance between squares
+    private static final int BOX = 20;    // size of a square
     private static final int CELL = 18;   // size of a picker cell
+    private static final int RESULT = 9;  // "selected" value meaning the result square
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String[] SMITHING_LABELS = {"Template", "Base item", "Addition"};
     private static List<ItemStack> allItems = null;
+    private static Set<String> allNamespaces = null;
 
     private final JsonObject original;     // null when making a new recipe
     private final String recipeId;         // null when making a new recipe
+    private final String typeId;
+    private final Layout layout;
     private final JsonElement[] slotJson = new JsonElement[9];
     private final Ingredient[] slotIng = new Ingredient[9];
     private String resultItem = null;
     private ItemStack resultStack = ItemStack.EMPTY;
     private int resultCount = 1;
     private boolean shaped = true;
-    private int selected = 0;              // 0-8 grid squares, 9 = result square
+    private int cookTime;
+    private float experience = 0.1f;
+    private int selected = 0;
 
     private EditBox searchBox;
     private Button shapeButton;
@@ -66,10 +75,48 @@ public class GridEditorScreen extends ForgeScreen {
     private int pickCols;
     private int pickRows;
 
-    public GridEditorScreen(Screen parent, JsonObject original, String recipeId, String presetResult) {
+    /** True for recipe types this screen can edit. */
+    public static boolean supports(String type) {
+        return layoutFor(type) != null;
+    }
+
+    private static Layout layoutFor(String type) {
+        if (type == null) {
+            return null;
+        }
+        return switch (type) {
+            case "minecraft:crafting_shaped", "minecraft:crafting_shapeless" -> Layout.CRAFTING;
+            case "minecraft:smelting", "minecraft:blasting", "minecraft:smoking", "minecraft:campfire_cooking" ->
+                    Layout.COOKING;
+            case "minecraft:stonecutting" -> Layout.STONECUTTING;
+            case "minecraft:smithing_transform" -> Layout.SMITHING;
+            default -> null;
+        };
+    }
+
+    private static int defaultCookTime(String type) {
+        return switch (type) {
+            case "minecraft:blasting", "minecraft:smoking" -> 100;
+            case "minecraft:campfire_cooking" -> 600;
+            default -> 200;
+        };
+    }
+
+    public GridEditorScreen(Screen parent, JsonObject original, String recipeId, String presetResult, String newType) {
         super(Component.literal("Recipe Forge"), parent);
         this.original = original;
         this.recipeId = recipeId;
+        String type = newType;
+        if (original != null && original.has("type")) {
+            type = original.get("type").getAsString();
+        }
+        if (layoutFor(type) == null) {
+            type = "minecraft:crafting_shaped";
+        }
+        this.typeId = type;
+        this.layout = layoutFor(type);
+        this.shaped = !type.endsWith("shapeless");
+        this.cookTime = defaultCookTime(type);
         if (original != null) {
             loadFromJson(original);
         } else if (presetResult != null) {
@@ -77,38 +124,113 @@ public class GridEditorScreen extends ForgeScreen {
         }
     }
 
+    // ------------------------------------------------------------ layout helpers
+
+    private int slotCount() {
+        return switch (layout) {
+            case CRAFTING -> 9;
+            case COOKING, STONECUTTING -> 1;
+            case SMITHING -> 3;
+        };
+    }
+
+    private int sx(int i) {
+        return switch (layout) {
+            case CRAFTING -> gridX + (i % 3) * STEP;
+            case COOKING, STONECUTTING -> gridX + STEP;
+            case SMITHING -> gridX;
+        };
+    }
+
+    private int sy(int i) {
+        return switch (layout) {
+            case CRAFTING -> gridY + (i / 3) * STEP;
+            case COOKING, STONECUTTING -> gridY + STEP;
+            case SMITHING -> gridY + i * STEP;
+        };
+    }
+
+    private boolean showCount() {
+        return layout == Layout.CRAFTING || layout == Layout.STONECUTTING;
+    }
+
+    private String stationName() {
+        return switch (typeId) {
+            case "minecraft:smelting" -> "Furnace";
+            case "minecraft:blasting" -> "Blast furnace";
+            case "minecraft:smoking" -> "Smoker";
+            case "minecraft:campfire_cooking" -> "Campfire";
+            case "minecraft:stonecutting" -> "Stonecutter";
+            case "minecraft:smithing_transform" -> "Smithing table";
+            default -> "Crafting table";
+        };
+    }
+
+    private String currentType() {
+        if (layout == Layout.CRAFTING) {
+            return shaped ? "minecraft:crafting_shaped" : "minecraft:crafting_shapeless";
+        }
+        return typeId;
+    }
+
     // ------------------------------------------------------------ loading
+
+    private static JsonElement copyOf(JsonObject json, String key) {
+        return json.has(key) ? json.get(key).deepCopy() : null;
+    }
 
     private void loadFromJson(JsonObject json) {
         try {
-            String type = json.get("type").getAsString();
-            shaped = !type.endsWith("shapeless");
-            if (shaped) {
-                JsonArray pattern = json.getAsJsonArray("pattern");
-                JsonObject key = json.getAsJsonObject("key");
-                for (int r = 0; r < pattern.size() && r < 3; r++) {
-                    String row = pattern.get(r).getAsString();
-                    for (int c = 0; c < row.length() && c < 3; c++) {
-                        char ch = row.charAt(c);
-                        if (ch == ' ') {
-                            continue;
+            switch (layout) {
+                case CRAFTING -> {
+                    if (shaped) {
+                        JsonArray pattern = json.getAsJsonArray("pattern");
+                        JsonObject key = json.getAsJsonObject("key");
+                        for (int r = 0; r < pattern.size() && r < 3; r++) {
+                            String row = pattern.get(r).getAsString();
+                            for (int c = 0; c < row.length() && c < 3; c++) {
+                                char ch = row.charAt(c);
+                                if (ch == ' ') {
+                                    continue;
+                                }
+                                JsonElement ing = key.get(String.valueOf(ch));
+                                if (ing != null) {
+                                    setSlot(r * 3 + c, ing.deepCopy());
+                                }
+                            }
                         }
-                        JsonElement ing = key.get(String.valueOf(ch));
-                        if (ing != null) {
-                            setSlot(r * 3 + c, ing.deepCopy());
+                    } else {
+                        JsonArray list = json.getAsJsonArray("ingredients");
+                        for (int i = 0; i < list.size() && i < 9; i++) {
+                            setSlot(i, list.get(i).deepCopy());
                         }
                     }
                 }
-            } else {
-                JsonArray list = json.getAsJsonArray("ingredients");
-                for (int i = 0; i < list.size() && i < 9; i++) {
-                    setSlot(i, list.get(i).deepCopy());
+                case COOKING -> {
+                    setSlot(0, copyOf(json, "ingredient"));
+                    if (json.has("cookingtime")) {
+                        cookTime = Math.max(1, json.get("cookingtime").getAsInt());
+                    }
+                    if (json.has("experience")) {
+                        experience = json.get("experience").getAsFloat();
+                    }
+                }
+                case STONECUTTING -> setSlot(0, copyOf(json, "ingredient"));
+                case SMITHING -> {
+                    setSlot(0, copyOf(json, "template"));
+                    setSlot(1, copyOf(json, "base"));
+                    setSlot(2, copyOf(json, "addition"));
                 }
             }
-            JsonObject res = json.getAsJsonObject("result");
-            setResult(res.get("id").getAsString());
-            if (res.has("count")) {
-                resultCount = Math.max(1, Math.min(64, res.get("count").getAsInt()));
+            JsonElement res = json.get("result");
+            if (res != null && res.isJsonObject()) {
+                JsonObject o = res.getAsJsonObject();
+                setResult(o.get("id").getAsString());
+                if (o.has("count")) {
+                    resultCount = Math.max(1, Math.min(64, o.get("count").getAsInt()));
+                }
+            } else if (res != null && res.isJsonPrimitive()) {
+                setResult(res.getAsString());
             }
         } catch (Exception e) {
             status = "Could not read this recipe completely: " + e.getMessage();
@@ -145,19 +267,6 @@ public class GridEditorScreen extends ForgeScreen {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
-    private static Set<String> allNamespaces = null;
-
-    private static Set<String> namespaces() {
-        if (allNamespaces == null) {
-            Set<String> set = new HashSet<>();
-            for (ItemStack s : allItems()) {
-                set.add(BuiltInRegistries.ITEM.getKey(s.getItem()).getNamespace());
-            }
-            allNamespaces = set;
-        }
-        return allNamespaces;
-    }
-
     private static List<ItemStack> allItems() {
         if (allItems == null) {
             List<ItemStack> list = new ArrayList<>();
@@ -170,6 +279,17 @@ public class GridEditorScreen extends ForgeScreen {
             allItems = list;
         }
         return allItems;
+    }
+
+    private static Set<String> namespaces() {
+        if (allNamespaces == null) {
+            Set<String> set = new HashSet<>();
+            for (ItemStack s : allItems()) {
+                set.add(BuiltInRegistries.ITEM.getKey(s.getItem()).getNamespace());
+            }
+            allNamespaces = set;
+        }
+        return allNamespaces;
     }
 
     // ------------------------------------------------------------ layout
@@ -190,7 +310,7 @@ public class GridEditorScreen extends ForgeScreen {
 
         searchBox = new EditBox(this.font, pickX, 24, pickCols * CELL, 20, Component.literal("Search items"));
         searchBox.setMaxLength(100);
-        searchBox.setHint(Component.literal("Search  (try @create)"));
+        searchBox.setHint(Component.literal("Search (@minecraft)"));
         searchBox.setValue(prev);
         searchBox.setResponder(text -> {
             page = 0;
@@ -199,14 +319,29 @@ public class GridEditorScreen extends ForgeScreen {
         this.addRenderableWidget(searchBox);
         this.setInitialFocus(searchBox);
 
-        shapeButton = Button.builder(Component.literal(shaped ? "Shaped" : "Shapeless"), b -> toggleShape())
-                .bounds(gridX, gridY + 3 * STEP + 6, 90, 20).build();
-        this.addRenderableWidget(shapeButton);
-
-        this.addRenderableWidget(Button.builder(Component.literal("-"), b -> changeCount(-1))
-                .bounds(resX - 10, resY + BOX + 4, 14, 14).build());
-        this.addRenderableWidget(Button.builder(Component.literal("+"), b -> changeCount(1))
-                .bounds(resX + BOX - 4, resY + BOX + 4, 14, 14).build());
+        int belowY = gridY + 3 * STEP + 6;
+        shapeButton = null;
+        if (layout == Layout.CRAFTING) {
+            shapeButton = Button.builder(Component.literal(shaped ? "Shaped" : "Shapeless"), b -> toggleShape())
+                    .bounds(gridX, belowY, 90, 20).build();
+            this.addRenderableWidget(shapeButton);
+        }
+        if (layout == Layout.COOKING) {
+            this.addRenderableWidget(Button.builder(Component.literal("-"), b -> changeCook(-20))
+                    .bounds(gridX + 96, belowY, 14, 14).build());
+            this.addRenderableWidget(Button.builder(Component.literal("+"), b -> changeCook(20))
+                    .bounds(gridX + 112, belowY, 14, 14).build());
+            this.addRenderableWidget(Button.builder(Component.literal("-"), b -> changeXp(-0.1f))
+                    .bounds(gridX + 96, belowY + 18, 14, 14).build());
+            this.addRenderableWidget(Button.builder(Component.literal("+"), b -> changeXp(0.1f))
+                    .bounds(gridX + 112, belowY + 18, 14, 14).build());
+        }
+        if (showCount()) {
+            this.addRenderableWidget(Button.builder(Component.literal("-"), b -> changeCount(-1))
+                    .bounds(resX - 10, resY + BOX + 4, 14, 14).build());
+            this.addRenderableWidget(Button.builder(Component.literal("+"), b -> changeCount(1))
+                    .bounds(resX + BOX - 4, resY + BOX + 4, 14, 14).build());
+        }
 
         this.addRenderableWidget(Button.builder(Component.literal("Save"), b -> save())
                 .bounds(gridX, this.height - 28, 64, 20).build());
@@ -255,6 +390,14 @@ public class GridEditorScreen extends ForgeScreen {
         resultCount = Math.max(1, Math.min(64, resultCount + delta));
     }
 
+    private void changeCook(int delta) {
+        cookTime = Math.max(20, Math.min(72000, cookTime + delta));
+    }
+
+    private void changeXp(float delta) {
+        experience = Math.max(0f, Math.min(100f, Math.round((experience + delta) * 100f) / 100f));
+    }
+
     // ------------------------------------------------------------ saving
 
     private String autoId() {
@@ -262,16 +405,13 @@ public class GridEditorScreen extends ForgeScreen {
         return "recipeforge:custom_" + path + "_" + (System.currentTimeMillis() / 1000L % 1000000L);
     }
 
-    private JsonObject buildJson() {
-        JsonObject out = original != null ? original.deepCopy() : new JsonObject();
-        out.addProperty("type", shaped ? "minecraft:crafting_shaped" : "minecraft:crafting_shapeless");
+    private void buildCrafting(JsonObject out) {
         if (!out.has("category")) {
             out.addProperty("category", "misc");
         }
         out.remove("pattern");
         out.remove("key");
         out.remove("ingredients");
-
         if (shaped) {
             int minR = 3;
             int maxR = -1;
@@ -319,7 +459,9 @@ public class GridEditorScreen extends ForgeScreen {
             }
             out.add("ingredients", list);
         }
+    }
 
+    private JsonObject buildResult() {
         JsonObject res = new JsonObject();
         if (original != null && original.has("result") && original.get("result").isJsonObject()) {
             res = original.getAsJsonObject("result").deepCopy();
@@ -329,8 +471,33 @@ public class GridEditorScreen extends ForgeScreen {
             }
         }
         res.addProperty("id", resultItem);
-        res.addProperty("count", resultCount);
-        out.add("result", res);
+        if (showCount()) {
+            res.addProperty("count", resultCount);
+        }
+        return res;
+    }
+
+    private JsonObject buildJson() {
+        JsonObject out = original != null ? original.deepCopy() : new JsonObject();
+        out.addProperty("type", currentType());
+        switch (layout) {
+            case CRAFTING -> buildCrafting(out);
+            case COOKING -> {
+                out.add("ingredient", slotJson[0].deepCopy());
+                out.addProperty("cookingtime", cookTime);
+                out.addProperty("experience", experience);
+                if (!out.has("category")) {
+                    out.addProperty("category", "misc");
+                }
+            }
+            case STONECUTTING -> out.add("ingredient", slotJson[0].deepCopy());
+            case SMITHING -> {
+                out.add("template", slotJson[0].deepCopy());
+                out.add("base", slotJson[1].deepCopy());
+                out.add("addition", slotJson[2].deepCopy());
+            }
+        }
+        out.add("result", buildResult());
         return out;
     }
 
@@ -339,14 +506,18 @@ public class GridEditorScreen extends ForgeScreen {
             status = "Click the square next to the arrow, then click the item this recipe makes.";
             return;
         }
-        boolean any = false;
-        for (JsonElement e : slotJson) {
-            if (e != null) {
-                any = true;
+        int filled = 0;
+        for (int i = 0; i < slotCount(); i++) {
+            if (slotJson[i] != null) {
+                filled++;
             }
         }
-        if (!any) {
+        if (layout == Layout.CRAFTING && filled == 0) {
             status = "Put at least one item in the grid first.";
+            return;
+        }
+        if (layout != Layout.CRAFTING && filled < slotCount()) {
+            status = "Fill every square on the left first.";
             return;
         }
         String id = recipeId != null ? recipeId : autoId();
@@ -371,13 +542,13 @@ public class GridEditorScreen extends ForgeScreen {
 
     private void pick(ItemStack stack) {
         String key = keyOf(stack);
-        if (selected == 9) {
+        if (selected == RESULT) {
             setResult(key);
         } else {
             JsonObject ing = new JsonObject();
             ing.addProperty("item", key);
             setSlot(selected, ing);
-            if (selected < 8) {
+            if (selected < slotCount() - 1) {
                 selected++;
             }
         }
@@ -388,10 +559,8 @@ public class GridEditorScreen extends ForgeScreen {
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        for (int i = 0; i < 9; i++) {
-            int x = gridX + (i % 3) * STEP;
-            int y = gridY + (i / 3) * STEP;
-            if (Ui.inside(mouseX, mouseY, x, y, BOX, BOX)) {
+        for (int i = 0; i < slotCount(); i++) {
+            if (Ui.inside(mouseX, mouseY, sx(i), sy(i), BOX, BOX)) {
                 selected = i;
                 if (button == 1) {
                     setSlot(i, null);
@@ -400,7 +569,7 @@ public class GridEditorScreen extends ForgeScreen {
             }
         }
         if (Ui.inside(mouseX, mouseY, resX, resY, BOX, BOX)) {
-            selected = 9;
+            selected = RESULT;
             if (button == 1) {
                 resultItem = null;
                 resultStack = ItemStack.EMPTY;
@@ -432,12 +601,17 @@ public class GridEditorScreen extends ForgeScreen {
 
     // ------------------------------------------------------------ drawing
 
+    private String cookText() {
+        String time = cookTime % 20 == 0 ? (cookTime / 20) + " s"
+                : String.format(Locale.ROOT, "%.1f s", cookTime / 20.0);
+        return "Cook time: " + time;
+    }
+
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
 
-        String head = recipeId != null ? "Editing: " + recipeId + "  (saving replaces it)"
-                : "New recipe  (saving adds a new recipe)";
+        String head = stationName() + ": " + (recipeId != null ? "editing " + recipeId : "new recipe");
         g.drawCenteredString(this.font, this.font.plainSubstrByWidth(head, this.width - 20), this.width / 2, 8, 0xFFFFFF);
         g.drawString(this.font, "1) Click a square", gridX, 24, 0xFFFFFF);
         g.drawString(this.font, "2) Click an item ->", gridX, 35, 0xFFFFFF);
@@ -445,9 +619,9 @@ public class GridEditorScreen extends ForgeScreen {
 
         Component hoverText = null;
 
-        for (int i = 0; i < 9; i++) {
-            int x = gridX + (i % 3) * STEP;
-            int y = gridY + (i / 3) * STEP;
+        for (int i = 0; i < slotCount(); i++) {
+            int x = sx(i);
+            int y = sy(i);
             Ui.slot(g, x, y, BOX);
             ItemStack shown = slotIng[i] == null ? ItemStack.EMPTY : Ui.cycle(slotIng[i].getItems());
             if (!shown.isEmpty()) {
@@ -455,6 +629,9 @@ public class GridEditorScreen extends ForgeScreen {
             }
             if (selected == i) {
                 Ui.outline(g, x - 1, y - 1, BOX + 2, BOX + 2, 0xFFFFFF55);
+            }
+            if (layout == Layout.SMITHING) {
+                g.drawString(this.font, SMITHING_LABELS[i], x + BOX + 4, y + 6, 0xAAAAAA);
             }
             if (Ui.inside(mouseX, mouseY, x, y, BOX, BOX) && slotJson[i] != null) {
                 hoverText = describe(slotJson[i], shown);
@@ -465,20 +642,32 @@ public class GridEditorScreen extends ForgeScreen {
         g.drawString(this.font, "Makes", resX - 2, resY - 11, 0xFFFFFF);
         Ui.slot(g, resX, resY, BOX);
         if (!resultStack.isEmpty()) {
-            ItemStack withCount = resultStack.copyWithCount(resultCount);
+            ItemStack withCount = resultStack.copyWithCount(showCount() ? resultCount : 1);
             g.renderItem(withCount, resX + 2, resY + 2);
             g.renderItemDecorations(this.font, withCount, resX + 2, resY + 2);
         }
-        if (selected == 9) {
+        if (selected == RESULT) {
             Ui.outline(g, resX - 1, resY - 1, BOX + 2, BOX + 2, 0xFFFFFF55);
         }
-        g.drawCenteredString(this.font, String.valueOf(resultCount), resX + BOX / 2, resY + BOX + 7, 0xFFFFFF);
+        if (showCount()) {
+            g.drawCenteredString(this.font, String.valueOf(resultCount), resX + BOX / 2, resY + BOX + 7, 0xFFFFFF);
+        }
         if (Ui.inside(mouseX, mouseY, resX, resY, BOX, BOX) && !resultStack.isEmpty()) {
             hoverText = resultStack.getHoverName();
         }
 
-        g.drawString(this.font, shaped ? "Shaped: exact layout" : "Shapeless: any order",
-                gridX, gridY + 3 * STEP + 30, 0xAAAAAA);
+        int belowY = gridY + 3 * STEP + 6;
+        switch (layout) {
+            case CRAFTING -> g.drawString(this.font, shaped ? "Shaped: exact layout" : "Shapeless: any order",
+                    gridX, belowY + 24, 0xAAAAAA);
+            case COOKING -> {
+                g.drawString(this.font, cookText(), gridX, belowY + 3, 0xFFFFFF);
+                g.drawString(this.font, "XP: " + String.format(Locale.ROOT, "%.2f", experience),
+                        gridX, belowY + 21, 0xFFFFFF);
+            }
+            case STONECUTTING -> g.drawString(this.font, "1 item in, items out", gridX, belowY + 3, 0xAAAAAA);
+            case SMITHING -> g.drawString(this.font, "All 3 squares are needed", gridX, belowY + 3, 0xAAAAAA);
+        }
 
         int start = page * perPage();
         for (int i = 0; i < perPage() && start + i < filtered.size(); i++) {
@@ -494,6 +683,8 @@ public class GridEditorScreen extends ForgeScreen {
         g.drawCenteredString(this.font, "Page " + (page + 1) + " / " + (maxPage() + 1),
                 pickX + pickCols * CELL / 2, this.height - 22, 0xAAAAAA);
 
+        g.drawString(this.font, recipeId != null ? "Saving replaces the original recipe."
+                : "Saving adds a new recipe.", gridX, this.height - 54, 0x888888);
         drawStatus(g, gridX, this.height - 42, this.width - 2 * gridX);
         if (hoverText != null) {
             g.renderTooltip(this.font, hoverText, mouseX, mouseY);

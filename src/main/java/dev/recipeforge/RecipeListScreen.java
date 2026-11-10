@@ -114,7 +114,7 @@ public class RecipeListScreen extends ForgeScreen {
     }
 
     private void addNew() {
-        this.minecraft.setScreen(new GridEditorScreen(this, null, null, key.toString()));
+        this.minecraft.setScreen(new RecipeTypeChooserScreen(this, key.toString()));
     }
 
     @Override
@@ -133,8 +133,8 @@ public class RecipeListScreen extends ForgeScreen {
         try {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
             String type = obj.has("type") ? obj.get("type").getAsString() : "";
-            if (type.equals("minecraft:crafting_shaped") || type.equals("minecraft:crafting_shapeless")) {
-                this.minecraft.setScreen(new GridEditorScreen(this, obj, id, null));
+            if (GridEditorScreen.supports(type)) {
+                this.minecraft.setScreen(new GridEditorScreen(this, obj, id, null, null));
             } else {
                 this.minecraft.setScreen(new EditorScreen(this, id, json));
             }

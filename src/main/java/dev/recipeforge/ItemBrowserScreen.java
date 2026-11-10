@@ -48,7 +48,7 @@ public class ItemBrowserScreen extends ForgeScreen {
 
         searchBox = new EditBox(this.font, this.width / 2 - 100, 22, 200, 20, Component.literal("Search"));
         searchBox.setMaxLength(100);
-        searchBox.setHint(Component.literal("Search  (try @create)"));
+        searchBox.setHint(Component.literal("Search  (try @minecraft)"));
         searchBox.setValue(prev);
         searchBox.setResponder(text -> {
             page = 0;
@@ -62,7 +62,7 @@ public class ItemBrowserScreen extends ForgeScreen {
         this.addRenderableWidget(Button.builder(Component.literal("Close"),
                 b -> this.onClose()).bounds(this.width - 80, 22, 70, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal("New recipe"),
-                b -> this.minecraft.setScreen(new GridEditorScreen(this, null, null, null)))
+                b -> this.minecraft.setScreen(new RecipeTypeChooserScreen(this, null)))
                 .bounds(10, this.height - 28, 100, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal("<"),
                 b -> changePage(-1)).bounds(this.width / 2 - 60, this.height - 28, 40, 20).build());
@@ -111,7 +111,7 @@ public class ItemBrowserScreen extends ForgeScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawCenteredString(this.font, this.title, this.width / 2, 8, 0xFFFFFF);
-        g.drawCenteredString(this.font, "Click an item to see its recipes.   Tip: @create shows only Create items", this.width / 2, 45, 0xAAAAAA);
+        g.drawCenteredString(this.font, "Click an item.   Tip: @minecraft shows only Minecraft items", this.width / 2, 45, 0xAAAAAA);
 
         int start = page * perPage();
         RecipeData.Info hover = null;
