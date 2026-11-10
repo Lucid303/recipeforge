@@ -6,7 +6,10 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** Client -> server request. action is SAVE, DISABLE or RESTORE. */
+/**
+ * Client -> server request.
+ * action: SAVE, DISABLE, RESTORE, REAPPLY (json = history number), GET_RECIPE, GET_HISTORY.
+ */
 public record RecipeEditPayload(String action, String recipeId, String json) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<RecipeEditPayload> TYPE =

@@ -9,6 +9,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
@@ -26,10 +27,15 @@ public class RecipeForgeClient {
     public RecipeForgeClient(IEventBus modBus) {
         modBus.addListener(this::registerKeys);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(this::onRecipesUpdated);
     }
 
     private void registerKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_KEY);
+    }
+
+    private void onRecipesUpdated(RecipesUpdatedEvent event) {
+        ClientState.recipeVersion++;
     }
 
     private void onClientTick(ClientTickEvent.Post event) {
@@ -42,7 +48,7 @@ public class RecipeForgeClient {
                 mc.player.displayClientMessage(Component.literal("Recipe Forge only works in creative mode."), true);
                 continue;
             }
-            mc.setScreen(new EditorScreen());
+            mc.setScreen(new ItemBrowserScreen(null));
         }
     }
 }
