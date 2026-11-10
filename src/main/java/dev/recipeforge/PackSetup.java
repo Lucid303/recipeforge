@@ -1,6 +1,9 @@
 package dev.recipeforge;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -12,7 +15,6 @@ import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackSource;
-import net.minecraft.server.packs.repository.PackSelectionConfig;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.event.AddPackFindersEvent;
 
@@ -62,16 +64,54 @@ public final class PackSetup {
             }
         };
 
-        Pack pack = Pack.readMetaAndCreate(
-                info,
-                supplier,
-                PackType.SERVER_DATA,
-                new PackSelectionConfig(true, Pack.Position.TOP, false));
+        final Pack pack;
+        try {
+            pack = createPack(info, supplier);
+        } catch (Exception e) {
+            RecipeForge.LOGGER.error("Recipe Forge overlay pack could not be created", e);
+            return;
+        }
 
         if (pack != null) {
             event.addRepositorySource(consumer -> consumer.accept(pack));
         } else {
-            RecipeForge.LOGGER.error("Recipe Forge overlay pack could not be created (bad pack.mcmeta?)");
+            RecipeForge.LOGGER.error("Recipe Forge overlay pack could not be created (no matching Pack method found)");
         }
+    }
+
+    /**
+     * Calls Pack.readMetaAndCreate by reflection, because the exact class used for its
+     * last argument differs between Minecraft versions.
+     */
+    private static Pack createPack(PackLocationInfo info, Pack.ResourcesSupplier supplier) throws Exception {
+        for (Method m : Pack.class.getDeclaredMethods()) {
+            if (!m.getName().equals("readMetaAndCreate") || !Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length == 4 && p[0] == PackLocationInfo.class && p[2] == PackType.class) {
+                RecipeForge.LOGGER.info("Recipe Forge: using Pack method with last argument type {}", p[3].getName());
+                Object config = buildConfig(p[3]);
+                if (config != null) {
+                    m.setAccessible(true);
+                    return (Pack) m.invoke(null, info, supplier, PackType.SERVER_DATA, config);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Object buildConfig(Class<?> type) throws Exception {
+        if (type == Pack.Position.class) {
+            return Pack.Position.TOP;
+        }
+        for (Constructor<?> c : type.getDeclaredConstructors()) {
+            Class<?>[] a = c.getParameterTypes();
+            if (a.length == 3 && a[0] == boolean.class && a[1] == Pack.Position.class && a[2] == boolean.class) {
+                c.setAccessible(true);
+                return c.newInstance(true, Pack.Position.TOP, false);
+            }
+        }
+        return null;
     }
 }
