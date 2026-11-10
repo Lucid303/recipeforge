@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+
+[[mods]]
+modId="recipeforge"
+version="0.1.0"
+displayName="Recipe Forge"
+description='''
+Creative-mode in-game editor for recipes of any mod (Create, Mekanism, Ars Nouveau, ...).
+Edits are saved as an overlay datapack and applied instantly with a reload.
+'''
+
+[[dependencies.recipeforge]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.recipeforge]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"
