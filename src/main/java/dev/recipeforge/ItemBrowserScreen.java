@@ -1,6 +1,8 @@
 package dev.recipeforge;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,7 +48,7 @@ public class ItemBrowserScreen extends ForgeScreen {
 
         searchBox = new EditBox(this.font, this.width / 2 - 100, 22, 200, 20, Component.literal("Search"));
         searchBox.setMaxLength(100);
-        searchBox.setHint(Component.literal("Type to search items..."));
+        searchBox.setHint(Component.literal("Search  (try @create)"));
         searchBox.setValue(prev);
         searchBox.setResponder(text -> {
             page = 0;
@@ -72,12 +74,14 @@ public class ItemBrowserScreen extends ForgeScreen {
 
     private void applyFilter(String text) {
         lastFilter = text == null ? "" : text;
-        String f = lastFilter.trim().toLowerCase(Locale.ROOT);
+        Set<String> namespaces = new HashSet<>();
+        for (RecipeData.Info info : data.values()) {
+            namespaces.add(info.key().getNamespace());
+        }
+        SearchFilter f = SearchFilter.parse(lastFilter, namespaces);
         filtered.clear();
         for (RecipeData.Info info : data.values()) {
-            if (f.isEmpty()
-                    || info.key().toString().contains(f)
-                    || info.stack().getHoverName().getString().toLowerCase(Locale.ROOT).contains(f)) {
+            if (f.matches(info.key(), info.stack().getHoverName().getString())) {
                 filtered.add(info);
             }
         }
@@ -107,7 +111,7 @@ public class ItemBrowserScreen extends ForgeScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawCenteredString(this.font, this.title, this.width / 2, 8, 0xFFFFFF);
-        g.drawCenteredString(this.font, "Click an item to see its recipes", this.width / 2, 45, 0xAAAAAA);
+        g.drawCenteredString(this.font, "Click an item to see its recipes.   Tip: @create shows only Create items", this.width / 2, 45, 0xAAAAAA);
 
         int start = page * perPage();
         RecipeData.Info hover = null;

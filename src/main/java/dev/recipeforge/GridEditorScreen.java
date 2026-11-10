@@ -1,6 +1,8 @@
 package dev.recipeforge;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -143,6 +145,19 @@ public class GridEditorScreen extends ForgeScreen {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
+    private static Set<String> allNamespaces = null;
+
+    private static Set<String> namespaces() {
+        if (allNamespaces == null) {
+            Set<String> set = new HashSet<>();
+            for (ItemStack s : allItems()) {
+                set.add(BuiltInRegistries.ITEM.getKey(s.getItem()).getNamespace());
+            }
+            allNamespaces = set;
+        }
+        return allNamespaces;
+    }
+
     private static List<ItemStack> allItems() {
         if (allItems == null) {
             List<ItemStack> list = new ArrayList<>();
@@ -175,7 +190,7 @@ public class GridEditorScreen extends ForgeScreen {
 
         searchBox = new EditBox(this.font, pickX, 24, pickCols * CELL, 20, Component.literal("Search items"));
         searchBox.setMaxLength(100);
-        searchBox.setHint(Component.literal("Search items..."));
+        searchBox.setHint(Component.literal("Search  (try @create)"));
         searchBox.setValue(prev);
         searchBox.setResponder(text -> {
             page = 0;
@@ -208,11 +223,11 @@ public class GridEditorScreen extends ForgeScreen {
 
     private void applyFilter(String text) {
         lastSearch = text == null ? "" : text;
-        String f = lastSearch.trim().toLowerCase(Locale.ROOT);
+        SearchFilter f = SearchFilter.parse(lastSearch, namespaces());
         filtered.clear();
         for (ItemStack s : allItems()) {
-            if (f.isEmpty() || keyOf(s).contains(f)
-                    || s.getHoverName().getString().toLowerCase(Locale.ROOT).contains(f)) {
+            ResourceLocation key = BuiltInRegistries.ITEM.getKey(s.getItem());
+            if (f.matches(key, s.getHoverName().getString())) {
                 filtered.add(s);
             }
         }
