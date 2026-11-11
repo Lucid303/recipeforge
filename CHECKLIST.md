@@ -1,77 +1,56 @@
-# World Forge 0.5.0 - things to check
+# World Forge 0.6.0 - things to check
 
-## A. General
-1. Left Alt opens the World Forge hub in a creative world.
-2. Left Alt in survival shows "creative mode only" (no screen).
-3. The key can be changed in Controls under "World Forge".
-4. Hub shows 6 tiles: Recipe Forge, Loot Forge, Structure Forge, Biome Forge, Station Forge, History.
-5. Esc goes back one screen at a time; leaving creative closes every screen.
-6. Old Recipe Forge edits (config/recipeforge) are still active after updating.
-7. Every editor has a coloured banner with the station / module icon and name.
+## General
+1. Left Alt opens the hub in creative; in survival it shows "creative mode only".
+2. Hub has 5 tiles (Recipe, Loot, Structure, Biome, History); no grey text under them; hovering shows a description.
+3. Every screen has a coloured banner, a Back button at the bottom right, and Esc goes back one screen.
+4. Page numbers never overlap the < > buttons; the mouse wheel changes pages everywhere.
+5. Long status messages wrap onto a second line instead of being cut off.
+6. Buttons everywhere are the normal Minecraft grey (no light-grey ones).
 
-## B. Recipe Forge
-8. Search box finds items; @minecraft shows only Minecraft items, @create only Create, "@create cogwheel" works.
-9. Clicking an item lists every recipe that makes it, drawn as pictures, with the station icon and name.
-10. Stick (minecraft:stick) opens the 3x3 editor (this used to fail).
-11. Crafting table: edit, shaped/shapeless toggle, result count, Save & Reload; JEI updates.
-12. Furnace / blast furnace / smoker / campfire: edit with cook time and XP buttons.
-13. Stonecutter and smithing table (3 squares) editors work.
-14. Tag ingredients (e.g. any planks) survive editing.
-15. Remove, "Undo my changes", and "Add new recipe" (station chooser) work.
-16. Other mods' machine recipes (Create, Mekanism, Ars Nouveau) open the text editor and save.
-17. Edited crafting recipes also apply to the Crafter block.
-18. Non-creative or non-op players on a server cannot change anything.
+## Recipe Forge
+7. Search: @minecraft, @create, "@create cogwheel", and @tag (shows item tags like minecraft:planks).
+8. Click an item: recipes shown as pictures with the right station icon + name (also anvil/grindstone combos).
+9. Crafting table / furnace / blast furnace / smoker / campfire / stonecutter / smithing editors work; stick opens.
+10. Tag ingredients: pick a tag with @tag, save; one recipe accepts every item in the tag.
+11. Keep: select a square, press Keep (green K), save; the item stays in the grid after crafting (e.g. axe + log -> stripped log).
+12. New recipe chooser has Crafting table, Furnace, Blast furnace, Smoker, Campfire, Stonecutter, Smithing table,
+    Anvil, Anvil (block), Grindstone, Grindstone (block).
+13. Anvil / grindstone combinations appear in the list of the result item (blocked ones under both input items),
+    can be edited and removed, and work at the anvil / grindstone.
+14. Custom anvil recipes show in JEI (needs the JEI build; see the build log).
+15. Remove, Undo my changes, Add new recipe work; text editor works for other mods' machines.
 
-## C. Station Forge
-19. Anvil: add a combination (item + item -> item with XP level cost); it works at an anvil.
-20. Anvil: "Block one" prevents a combination.
-21. Grindstone: add / block combinations; XP reward works.
-22. Loom: each banner pattern has a button cycling its pattern item; the loom reflects it after reload.
-23. Loom: "Put the loom back to normal" works.
-24. (brewing build) Brewing stand: list shows vanilla brews; Remove, Put back, Edit, Add new brew work.
-25. (brewing build) Brewing changes show for all players and JEI refreshes.
+## Loot Forge
+16. Categories, search and @mod filter work.
+17. Editor: pools, items, weights, counts, rolls (shows 1, not 1.0), Add item, Add pool, Remove pool, X.
+18. Hovering any editor button explains it; a legend line explains W / x / X.
+19. Disable button toggles to Enable and back; the table really drops nothing while disabled.
+20. Restore throws away unsaved edits (deleting an item and pressing Restore brings it back).
+21. No text/code button anymore.
 
-## D. Loot Forge
-26. List shows loot tables from vanilla and mods; category buttons (All/Blocks/Mobs/Chests/Other) filter.
-27. Search and @mod filter work.
-28. Opening a table shows pools and item entries with weight and count.
-29. Item button, weight +/-, count min/max +/-, X (remove entry), Add item, Add pool, Remove pool work.
-30. Save applies after reload (break a block / kill a mob / open a chest to test).
-31. Disable makes a table drop nothing; Restore brings the original back.
-32. Text button opens the raw JSON and saves it.
+## Structure Forge
+22. Structure list, search, @mod; tick biomes, All shown / None shown / Never spawn / Save / Restore.
+23. After re-entering the world, new chunks use the new biome list.
+24. (Block editing inside structures was removed for now.)
 
-## E. Structure Forge
-33. "Where they spawn" lists structures; opening one shows ticked biomes.
-34. Tick/untick biomes, "All shown", "None shown", "Never spawn", Save, Restore.
-35. After re-entering the world, NEW chunks use the new biome list.
-36. "Blocks inside" lists structure files; opening one shows block names and counts.
-37. "Replace all" swaps a block everywhere in the file; new structures generate with the new block.
-38. "Put back the original" works.
+## Biome Forge
+25. Search works (you can type more than one letter).
+26. Choosing a colour and pressing Apply changes the world colours; they stay after leaving the screen and after a restart.
+27. If it cannot work, the screen shows the reason in yellow text.
+28. Preview shows grass block, leaves, water, tall grass and sky/fog strip.
 
-## F. Biome Forge
-39. Biome list includes vanilla and modded biomes; search and @mod work.
-40. Selecting a biome shows its current Grass / Leaves / Water / Underwater / Sky / Fog colours.
-41. Colour wheel (drag), brightness slider and hex box change the chosen colour and the preview.
-42. Preview shows grass block, leaves, water, tall grass and a sky/fog strip in the chosen colours.
-43. Apply changes the world colours without leaving the game; other players see it too.
-44. Reset biome works; colours stay after restarting the game.
+## History
+29. Anvil / grindstone entries show pictures (items), not text.
+30. Recipe, loot, biome (colour swatches) and structure (biome squares) entries show before / after pictures.
+31. Put back the original / Use this version again work for recipes; Put back the original works for loot, biome, structure.
 
-## G. History
-45. List shows every change from every module.
-46. Selecting an entry shows BEFORE and AFTER pictures for edits, NEW (after only) for new things,
-    REMOVED (before only) for deletes.
-47. Recipe entries: "Use this version again" and "Put back the original" work.
-48. Loot, biome, structure and loom entries have "Put back the original".
+## Removed on purpose
+Brewing stand, loom, structure block editing, Station Forge tile, "Other stations" button.
 
-## Known limits (not implemented)
-- No real 3D structure viewer/editor (no rotating 3D view, no building blocks in 3D).
-- Previews are a fixed isometric picture, not a rotating 3D model.
-- History shows pictures drawn in game; it does not save PNG files.
-- Not a docked Blender/Axiom-style window layout (it is a hub with full-screen editors).
-- Structure spawn changes need re-entering the world; they cannot apply live.
-- Structure spacing / rarity / weights are not editable yet.
-- Biome Forge: only grass, foliage, water, underwater, sky, fog (no per-block colour maps like Polytone).
-- Loot Forge: special entries (alternatives, groups, conditions) are kept but only removable.
-- Global loot modifiers and loot generated by mod code are not covered.
-- Brewing: only potion-to-potion brews; the whole brewing build depends on game internals.
-- Anvil/grindstone/loom/brewing changes cannot be re-applied from History.
+## Known limits
+- No real 3D editing or rotating 3D previews; History pictures are drawn in game (no PNG files).
+- Keep works only for the crafting table / Crafter (the game consumes smithing, anvil, grindstone and furnace inputs by itself).
+- Keep recipes show in JEI as ordinary crafting recipes without a "kept" marker.
+- Structure spawn changes need re-entering the world.
+- Anvil/grindstone: custom grindstone recipes use up both input stacks fully; the anvil may not trigger when the first item cannot hold enchantments.

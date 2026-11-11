@@ -10,11 +10,16 @@ base {
     archivesName = project.mod_id
 }
 
-// "gradle jar -Pbrewing" builds the version that also supports the brewing stand.
-if (project.hasProperty('brewing')) {
-    sourceSets.main.java.srcDir 'src/brewing/java'
-    base {
-        archivesName = project.mod_id + '-brewing'
+repositories {
+    maven { url = 'https://maven.blamejared.com/' }
+    maven { url = 'https://modmaven.dev' }
+}
+
+// "gradle build -Pjei" also builds the JEI plugin, which shows custom anvil recipes in JEI.
+if (project.hasProperty('jei')) {
+    sourceSets.main.java.srcDir 'src/jei/java'
+    dependencies {
+        compileOnly "mezz.jei:jei-1.21.1-neoforge-api:19.+"
     }
 }
 
