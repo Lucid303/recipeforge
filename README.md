@@ -1,51 +1,26 @@
-# Recipe Forge (version 0.1.0)
+# World Forge (version 0.5.0)
 
-Creative-mode, in-game recipe editor for NeoForge 1.21.1. Works with recipes from any mod
-(Create, Mekanism, Ars Nouveau, ...). Edits are saved as an overlay datapack in
-`config/recipeforge/pack` and applied instantly with a reload (same as /reload).
+A creative-mode toolbox for designing modpacks in game. NeoForge 1.21.1.
+Press LEFT ALT in a creative world to open the hub (change the key in Controls > World Forge).
 
-## How to use in game
-1. Load a world in CREATIVE mode.
-2. Press F8 (change it in Controls > Recipe Forge).
-3. Type part of a recipe name, click one of the matches, press Load.
-4. Edit the JSON text, press "Save & Reload". JEI should update after the reload.
-5. Disable = turn a recipe off. Restore = remove your edit and bring the original back.
-   Template = a starter for a brand new recipe (give it a new id such as recipeforge:my_recipe).
+## Modules
+- Recipe Forge: crafting table, furnace, blast furnace, smoker, campfire, stonecutter, smithing table
+  (picture editors), plus a text editor for other mods' machines (Create, Mekanism, Ars Nouveau...).
+- Loot Forge: block drops, mob drops, chest loot. Works with every mod's loot tables (they are data files).
+- Structure Forge: choose which biomes a structure spawns in (needs re-entering the world), and replace
+  blocks inside structure files.
+- Biome Forge: change grass, leaf, water, underwater, sky and fog colours of any biome with a colour wheel.
+- Station Forge: anvil and grindstone combinations, loom pattern items, and (brewing build) brewing stand.
+- History: every change, with before / after pictures.
 
-Saving under the SAME id replaces that recipe. Saving under a NEW id adds another recipe.
+## Two builds
+- worldforge-0.5.0.jar: everything except the brewing stand.
+- worldforge-brewing-0.5.0.jar: everything including the brewing stand. Install only ONE of them.
 
-## How to build (GitHub does it for you)
-See the instructions in the chat. Short version: upload all these files to a new GitHub
-repository, open the Actions tab, wait for the green check, download "recipeforge-jar".
+## Where settings are stored
+config/worldforge/ inside the Minecraft instance: pack/ (recipes, loot, tags, structures),
+stations.json, brewing.json, biome_colors.json, history.json.
+Your old config/recipeforge folder is copied there automatically the first time.
+Copy config/worldforge into a modpack to share your changes.
 
-## If the Actions tab shows no "Build mod" workflow
-The hidden folder .github did not upload. On GitHub: Add file > Create new file, type the name
-.github/workflows/build.yml (typing the slashes makes the folders) and paste this:
-
-name: Build mod
-on:
-  push:
-  workflow_dispatch:
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.14.3
-      - name: Build
-        run: gradle build --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: recipeforge-jar
-          path: build/libs/*.jar
-
-## Known limits of v0.1
-- It is a JSON text editor, not a slot-based picture GUI (that comes in later versions).
-- Recipes that a mod creates purely in code (not from data files) cannot be disabled or replaced.
-- Singleplayer works with cheats on or off. On a dedicated server you must be an operator and in creative.
+See CHECKLIST.md for the full list of features and known limits.

@@ -10,6 +10,14 @@ base {
     archivesName = project.mod_id
 }
 
+// "gradle jar -Pbrewing" builds the version that also supports the brewing stand.
+if (project.hasProperty('brewing')) {
+    sourceSets.main.java.srcDir 'src/brewing/java'
+    base {
+        archivesName = project.mod_id + '-brewing'
+    }
+}
+
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
 }

@@ -32,11 +32,11 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * The picture editor for Minecraft's own stations: crafting table (3x3 grid), furnace, blast furnace,
- * smoker, campfire, stonecutter and smithing table. Click a square, then click an item on the right.
+ * The picture editor for crafting table, furnace, blast furnace, smoker, campfire, stonecutter,
+ * smithing table, anvil and grindstone. Click a square, then click an item on the right.
  */
 public class GridEditorScreen extends ForgeScreen {
-    private enum Layout { CRAFTING, COOKING, STONECUTTING, SMITHING }
+    private enum Layout { CRAFTING, COOKING, STONECUTTING, SMITHING, ANVIL, GRINDSTONE }
 
     private static final int STEP = 22;   // distance between squares
     private static final int BOX = 20;    // size of a square
@@ -47,8 +47,8 @@ public class GridEditorScreen extends ForgeScreen {
     private static List<ItemStack> allItems = null;
     private static Set<String> allNamespaces = null;
 
-    private final JsonObject original;     // null when making a new recipe
-    private final String recipeId;         // null when making a new recipe
+    private final JsonObject original;     // null when making something new
+    private final String recipeId;         // null when making something new
     private final String typeId;
     private final Layout layout;
     private final JsonElement[] slotJson = new JsonElement[9];
@@ -57,8 +57,11 @@ public class GridEditorScreen extends ForgeScreen {
     private ItemStack resultStack = ItemStack.EMPTY;
     private int resultCount = 1;
     private boolean shaped = true;
+    private boolean blockMode = false;     // anvil / grindstone: block a combination instead of making an item
     private int cookTime;
     private float experience = 0.1f;
+    private int levelCost = 5;             // anvil
+    private int xpReward = 0;              // grindstone
     private int selected = 0;
 
     private EditBox searchBox;
@@ -83,6 +86,12 @@ public class GridEditorScreen extends ForgeScreen {
     private static Layout layoutFor(String type) {
         if (type == null) {
             return null;
+        }
+        if (type.startsWith("recipeforge:anvil")) {
+            return Layout.ANVIL;
+        }
+        if (type.startsWith("recipeforge:grindstone")) {
+            return Layout.GRINDSTONE;
         }
         return switch (type) {
             case "minecraft:crafting_shaped", "minecraft:crafting_shapeless" -> Layout.CRAFTING;
@@ -116,6 +125,7 @@ public class GridEditorScreen extends ForgeScreen {
         this.typeId = type;
         this.layout = layoutFor(type);
         this.shaped = !type.endsWith("shapeless");
+        this.blockMode = type.endsWith("_block");
         this.cookTime = defaultCookTime(type);
         if (original != null) {
             loadFromJson(original);
@@ -126,11 +136,16 @@ public class GridEditorScreen extends ForgeScreen {
 
     // ------------------------------------------------------------ layout helpers
 
+    private boolean isPair() {
+        return layout == Layout.ANVIL || layout == Layout.GRINDSTONE;
+    }
+
     private int slotCount() {
         return switch (layout) {
             case CRAFTING -> 9;
             case COOKING, STONECUTTING -> 1;
             case SMITHING -> 3;
+            case ANVIL, GRINDSTONE -> 2;
         };
     }
 
@@ -138,7 +153,7 @@ public class GridEditorScreen extends ForgeScreen {
         return switch (layout) {
             case CRAFTING -> gridX + (i % 3) * STEP;
             case COOKING, STONECUTTING -> gridX + STEP;
-            case SMITHING -> gridX;
+            case SMITHING, ANVIL, GRINDSTONE -> gridX;
         };
     }
 
@@ -146,24 +161,25 @@ public class GridEditorScreen extends ForgeScreen {
         return switch (layout) {
             case CRAFTING -> gridY + (i / 3) * STEP;
             case COOKING, STONECUTTING -> gridY + STEP;
-            case SMITHING -> gridY + i * STEP;
+            case SMITHING, ANVIL, GRINDSTONE -> gridY + i * STEP;
         };
+    }
+
+    private String slotLabel(int i) {
+        return switch (layout) {
+            case SMITHING -> SMITHING_LABELS[i];
+            case ANVIL -> i == 0 ? "First item" : "Second item";
+            case GRINDSTONE -> i == 0 ? "Top item" : "Bottom item";
+            default -> null;
+        };
+    }
+
+    private boolean resultVisible() {
+        return !(isPair() && blockMode);
     }
 
     private boolean showCount() {
-        return layout == Layout.CRAFTING || layout == Layout.STONECUTTING;
-    }
-
-    private String stationName() {
-        return switch (typeId) {
-            case "minecraft:smelting" -> "Furnace";
-            case "minecraft:blasting" -> "Blast furnace";
-            case "minecraft:smoking" -> "Smoker";
-            case "minecraft:campfire_cooking" -> "Campfire";
-            case "minecraft:stonecutting" -> "Stonecutter";
-            case "minecraft:smithing_transform" -> "Smithing table";
-            default -> "Crafting table";
-        };
+        return layout == Layout.CRAFTING || layout == Layout.STONECUTTING || (isPair() && !blockMode);
     }
 
     private String currentType() {
@@ -177,6 +193,19 @@ public class GridEditorScreen extends ForgeScreen {
 
     private static JsonElement copyOf(JsonObject json, String key) {
         return json.has(key) ? json.get(key).deepCopy() : null;
+    }
+
+    private static String str(JsonObject json, String key) {
+        return json.has(key) && !json.get(key).isJsonNull() ? json.get(key).getAsString() : null;
+    }
+
+    private static JsonElement itemIng(String id) {
+        if (id == null) {
+            return null;
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("item", id);
+        return o;
     }
 
     private void loadFromJson(JsonObject json) {
@@ -221,19 +250,39 @@ public class GridEditorScreen extends ForgeScreen {
                     setSlot(1, copyOf(json, "base"));
                     setSlot(2, copyOf(json, "addition"));
                 }
-            }
-            JsonElement res = json.get("result");
-            if (res != null && res.isJsonObject()) {
-                JsonObject o = res.getAsJsonObject();
-                setResult(o.get("id").getAsString());
-                if (o.has("count")) {
-                    resultCount = Math.max(1, Math.min(64, o.get("count").getAsInt()));
+                case ANVIL, GRINDSTONE -> {
+                    setSlot(0, itemIng(str(json, "left")));
+                    setSlot(1, itemIng(str(json, "right")));
+                    String res = str(json, "result");
+                    if (res != null && !res.isEmpty()) {
+                        setResult(res);
+                    }
+                    if (json.has("count")) {
+                        resultCount = Math.max(1, Math.min(64, json.get("count").getAsInt()));
+                    }
+                    if (json.has("cost")) {
+                        levelCost = Math.max(1, json.get("cost").getAsInt());
+                    }
+                    if (json.has("xp")) {
+                        xpReward = Math.max(0, json.get("xp").getAsInt());
+                    }
+                    blockMode = "BLOCK".equals(str(json, "mode"));
                 }
-            } else if (res != null && res.isJsonPrimitive()) {
-                setResult(res.getAsString());
+            }
+            if (!isPair()) {
+                JsonElement res = json.get("result");
+                if (res != null && res.isJsonObject()) {
+                    JsonObject o = res.getAsJsonObject();
+                    setResult(o.get("id").getAsString());
+                    if (o.has("count")) {
+                        resultCount = Math.max(1, Math.min(64, o.get("count").getAsInt()));
+                    }
+                } else if (res != null && res.isJsonPrimitive()) {
+                    setResult(res.getAsString());
+                }
             }
         } catch (Exception e) {
-            status = "Could not read this recipe completely: " + e.getMessage();
+            status = "Could not read this completely: " + e.getMessage();
         }
     }
 
@@ -263,11 +312,11 @@ public class GridEditorScreen extends ForgeScreen {
         }
     }
 
-    private static String keyOf(ItemStack stack) {
+    public static String keyOf(ItemStack stack) {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
-    private static List<ItemStack> allItems() {
+    public static List<ItemStack> allItems() {
         if (allItems == null) {
             List<ItemStack> list = new ArrayList<>();
             BuiltInRegistries.ITEM.stream().forEach(item -> {
@@ -281,7 +330,7 @@ public class GridEditorScreen extends ForgeScreen {
         return allItems;
     }
 
-    private static Set<String> namespaces() {
+    public static Set<String> namespaces() {
         if (allNamespaces == null) {
             Set<String> set = new HashSet<>();
             for (ItemStack s : allItems()) {
@@ -335,6 +384,20 @@ public class GridEditorScreen extends ForgeScreen {
                     .bounds(gridX + 96, belowY + 18, 14, 14).build());
             this.addRenderableWidget(Button.builder(Component.literal("+"), b -> changeXp(0.1f))
                     .bounds(gridX + 112, belowY + 18, 14, 14).build());
+        }
+        if (isPair()) {
+            this.addRenderableWidget(Button.builder(
+                    Component.literal(blockMode ? "Mode: Block it" : "Mode: Make an item"), b -> {
+                        blockMode = !blockMode;
+                        this.rebuildWidgets();
+                    }).bounds(gridX, belowY, 126, 20).build());
+            if (!blockMode) {
+                int step = layout == Layout.ANVIL ? 1 : 5;
+                this.addRenderableWidget(Button.builder(Component.literal("-"), b -> changePairNumber(-step))
+                        .bounds(gridX + 96, belowY + 26, 14, 14).build());
+                this.addRenderableWidget(Button.builder(Component.literal("+"), b -> changePairNumber(step))
+                        .bounds(gridX + 112, belowY + 26, 14, 14).build());
+            }
         }
         if (showCount()) {
             this.addRenderableWidget(Button.builder(Component.literal("-"), b -> changeCount(-1))
@@ -398,11 +461,19 @@ public class GridEditorScreen extends ForgeScreen {
         experience = Math.max(0f, Math.min(100f, Math.round((experience + delta) * 100f) / 100f));
     }
 
+    private void changePairNumber(int delta) {
+        if (layout == Layout.ANVIL) {
+            levelCost = Math.max(1, Math.min(100, levelCost + delta));
+        } else {
+            xpReward = Math.max(0, Math.min(1000, xpReward + delta));
+        }
+    }
+
     // ------------------------------------------------------------ saving
 
     private String autoId() {
         String path = resultItem == null ? "recipe" : resultItem.replace(':', '_').replace('/', '_');
-        return "recipeforge:custom_" + path + "_" + (System.currentTimeMillis() / 1000L % 1000000L);
+        return "worldforge:custom_" + path + "_" + (System.currentTimeMillis() / 1000L % 1000000L);
     }
 
     private void buildCrafting(JsonObject out) {
@@ -496,12 +567,58 @@ public class GridEditorScreen extends ForgeScreen {
                 out.add("base", slotJson[1].deepCopy());
                 out.add("addition", slotJson[2].deepCopy());
             }
+            default -> { }
         }
         out.add("result", buildResult());
         return out;
     }
 
+    private static String itemOf(JsonElement slot) {
+        try {
+            return slot.getAsJsonObject().get("item").getAsString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void saveStation() {
+        if (slotJson[0] == null || slotJson[1] == null) {
+            status = "Fill both squares on the left first.";
+            return;
+        }
+        String left = itemOf(slotJson[0]);
+        String right = itemOf(slotJson[1]);
+        if (left == null || right == null) {
+            status = "Only plain items can be used here.";
+            return;
+        }
+        if (!blockMode && (resultItem == null || resultStack.isEmpty())) {
+            status = "Click the square next to the arrow, then click the item this makes.";
+            return;
+        }
+        JsonObject entry = new JsonObject();
+        if (recipeId != null) {
+            entry.addProperty("id", recipeId);
+        }
+        entry.addProperty("mode", blockMode ? "BLOCK" : "ADD");
+        entry.addProperty("left", left);
+        entry.addProperty("right", right);
+        if (!blockMode) {
+            entry.addProperty("result", resultItem);
+            entry.addProperty("count", resultCount);
+            entry.addProperty("cost", levelCost);
+            entry.addProperty("xp", xpReward);
+        }
+        String station = layout == Layout.ANVIL ? "anvil" : "grindstone";
+        PacketDistributor.sendToServer(new RecipeEditPayload("STATION_SAVE", station, GSON.toJson(entry)));
+        status = "Saving...";
+    }
+
     private void save() {
+        if (isPair()) {
+            saveStation();
+            return;
+        }
         if (resultItem == null || resultStack.isEmpty()) {
             status = "Click the square next to the arrow, then click the item this recipe makes.";
             return;
@@ -568,7 +685,7 @@ public class GridEditorScreen extends ForgeScreen {
                 return true;
             }
         }
-        if (Ui.inside(mouseX, mouseY, resX, resY, BOX, BOX)) {
+        if (resultVisible() && Ui.inside(mouseX, mouseY, resX, resY, BOX, BOX)) {
             selected = RESULT;
             if (button == 1) {
                 resultItem = null;
@@ -611,8 +728,8 @@ public class GridEditorScreen extends ForgeScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
 
-        String head = stationName() + ": " + (recipeId != null ? "editing " + recipeId : "new recipe");
-        g.drawCenteredString(this.font, this.font.plainSubstrByWidth(head, this.width - 20), this.width / 2, 8, 0xFFFFFF);
+        StationInfo.banner(g, this.font, this.width, StationInfo.forType(typeId),
+                recipeId != null ? "Editing: " + recipeId : "New");
         g.drawString(this.font, "1) Click a square", gridX, 24, 0xFFFFFF);
         g.drawString(this.font, "2) Click an item ->", gridX, 35, 0xFFFFFF);
         g.drawString(this.font, "Right-click = empty it", gridX, 46, 0xAAAAAA);
@@ -630,30 +747,36 @@ public class GridEditorScreen extends ForgeScreen {
             if (selected == i) {
                 Ui.outline(g, x - 1, y - 1, BOX + 2, BOX + 2, 0xFFFFFF55);
             }
-            if (layout == Layout.SMITHING) {
-                g.drawString(this.font, SMITHING_LABELS[i], x + BOX + 4, y + 6, 0xAAAAAA);
+            String label = slotLabel(i);
+            if (label != null) {
+                g.drawString(this.font, label, x + BOX + 4, y + 6, 0xAAAAAA);
             }
             if (Ui.inside(mouseX, mouseY, x, y, BOX, BOX) && slotJson[i] != null) {
                 hoverText = describe(slotJson[i], shown);
             }
         }
 
-        g.drawString(this.font, "->", gridX + 3 * STEP + 6, resY + 6, 0xFFFFFF);
-        g.drawString(this.font, "Makes", resX - 2, resY - 11, 0xFFFFFF);
-        Ui.slot(g, resX, resY, BOX);
-        if (!resultStack.isEmpty()) {
-            ItemStack withCount = resultStack.copyWithCount(showCount() ? resultCount : 1);
-            g.renderItem(withCount, resX + 2, resY + 2);
-            g.renderItemDecorations(this.font, withCount, resX + 2, resY + 2);
-        }
-        if (selected == RESULT) {
-            Ui.outline(g, resX - 1, resY - 1, BOX + 2, BOX + 2, 0xFFFFFF55);
-        }
-        if (showCount()) {
-            g.drawCenteredString(this.font, String.valueOf(resultCount), resX + BOX / 2, resY + BOX + 7, 0xFFFFFF);
-        }
-        if (Ui.inside(mouseX, mouseY, resX, resY, BOX, BOX) && !resultStack.isEmpty()) {
-            hoverText = resultStack.getHoverName();
+        if (resultVisible()) {
+            g.drawString(this.font, "->", gridX + 3 * STEP + 6, resY + 6, 0xFFFFFF);
+            g.drawString(this.font, "Makes", resX - 2, resY - 11, 0xFFFFFF);
+            Ui.slot(g, resX, resY, BOX);
+            if (!resultStack.isEmpty()) {
+                ItemStack withCount = resultStack.copyWithCount(showCount() ? resultCount : 1);
+                g.renderItem(withCount, resX + 2, resY + 2);
+                g.renderItemDecorations(this.font, withCount, resX + 2, resY + 2);
+            }
+            if (selected == RESULT) {
+                Ui.outline(g, resX - 1, resY - 1, BOX + 2, BOX + 2, 0xFFFFFF55);
+            }
+            if (showCount()) {
+                g.drawCenteredString(this.font, String.valueOf(resultCount), resX + BOX / 2, resY + BOX + 7, 0xFFFFFF);
+            }
+            if (Ui.inside(mouseX, mouseY, resX, resY, BOX, BOX) && !resultStack.isEmpty()) {
+                hoverText = resultStack.getHoverName();
+            }
+        } else {
+            g.drawString(this.font, "This combination", gridX + 3 * STEP - 6, resY, 0xFF5555);
+            g.drawString(this.font, "will be BLOCKED", gridX + 3 * STEP - 6, resY + 11, 0xFF5555);
         }
 
         int belowY = gridY + 3 * STEP + 6;
@@ -667,6 +790,16 @@ public class GridEditorScreen extends ForgeScreen {
             }
             case STONECUTTING -> g.drawString(this.font, "1 item in, items out", gridX, belowY + 3, 0xAAAAAA);
             case SMITHING -> g.drawString(this.font, "All 3 squares are needed", gridX, belowY + 3, 0xAAAAAA);
+            case ANVIL -> {
+                if (!blockMode) {
+                    g.drawString(this.font, "XP levels: " + levelCost, gridX, belowY + 29, 0xFFFFFF);
+                }
+            }
+            case GRINDSTONE -> {
+                if (!blockMode) {
+                    g.drawString(this.font, "XP given: " + xpReward, gridX, belowY + 29, 0xFFFFFF);
+                }
+            }
         }
 
         int start = page * perPage();
@@ -683,8 +816,8 @@ public class GridEditorScreen extends ForgeScreen {
         g.drawCenteredString(this.font, "Page " + (page + 1) + " / " + (maxPage() + 1),
                 pickX + pickCols * CELL / 2, this.height - 22, 0xAAAAAA);
 
-        g.drawString(this.font, recipeId != null ? "Saving replaces the original recipe."
-                : "Saving adds a new recipe.", gridX, this.height - 54, 0x888888);
+        g.drawString(this.font, recipeId != null ? "Saving replaces the existing one."
+                : "Saving adds a new one.", gridX, this.height - 54, 0x888888);
         drawStatus(g, gridX, this.height - 42, this.width - 2 * gridX);
         if (hoverText != null) {
             g.renderTooltip(this.font, hoverText, mouseX, mouseY);

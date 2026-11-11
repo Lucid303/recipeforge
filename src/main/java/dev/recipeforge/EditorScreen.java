@@ -17,15 +17,23 @@ import net.neoforged.neoforge.network.PacketDistributor;
 public class EditorScreen extends ForgeScreen {
     private final String startId;
     private final String startJson;
+    private final String action;
+    private final StationInfo.Info bannerInfo;
     private EditBox idBox;
     private MultiLineEditBox jsonBox;
     private int left;
     private int boxWidth;
 
     public EditorScreen(Screen parent, String id, String json) {
-        super(Component.literal("Recipe Forge - advanced editor"), parent);
+        this(parent, id, json, "SAVE", null);
+    }
+
+    public EditorScreen(Screen parent, String id, String json, String action, StationInfo.Info bannerInfo) {
+        super(Component.literal("World Forge - text editor"), parent);
         this.startId = id;
         this.startJson = json;
+        this.action = action;
+        this.bannerInfo = bannerInfo;
         this.status = "This recipe is edited as text. Change a number or item name, then press Save.";
     }
 
@@ -37,12 +45,12 @@ public class EditorScreen extends ForgeScreen {
         boxWidth = Math.min(this.width - 20, 440);
         left = (this.width - boxWidth) / 2;
 
-        idBox = new EditBox(this.font, left, 30, boxWidth, 20, Component.literal("Recipe ID"));
+        idBox = new EditBox(this.font, left, 34, boxWidth, 20, Component.literal("Recipe ID"));
         idBox.setMaxLength(256);
         idBox.setValue(prevId);
         this.addRenderableWidget(idBox);
 
-        int top = 56;
+        int top = 60;
         jsonBox = new MultiLineEditBox(this.font, left, top, boxWidth, Math.max(40, this.height - top - 56),
                 Component.literal("Recipe JSON"), Component.literal("Recipe JSON"));
         jsonBox.setValue(prevJson);
@@ -52,6 +60,18 @@ public class EditorScreen extends ForgeScreen {
                 .bounds(left, this.height - 28, 90, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> this.onClose())
                 .bounds(left + 96, this.height - 28, 90, 20).build());
+    }
+
+    private static String typeOf(String json) {
+        try {
+            JsonElement e = JsonParser.parseString(json);
+            if (e.isJsonObject() && e.getAsJsonObject().has("type")) {
+                return e.getAsJsonObject().get("type").getAsString();
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        return null;
     }
 
     private void save() {
@@ -75,7 +95,7 @@ public class EditorScreen extends ForgeScreen {
             status = "This recipe is too big to send.";
             return;
         }
-        PacketDistributor.sendToServer(new RecipeEditPayload("SAVE", id, text));
+        PacketDistributor.sendToServer(new RecipeEditPayload(action, id, text));
         status = "Saving...";
     }
 
@@ -90,8 +110,9 @@ public class EditorScreen extends ForgeScreen {
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
-        g.drawCenteredString(this.font, this.title, this.width / 2, 8, 0xFFFFFF);
-        g.drawString(this.font, "Recipe id (change it to save a copy instead of replacing):", left, 19, 0xAAAAAA);
+        StationInfo.banner(g, this.font, this.width,
+                bannerInfo != null ? bannerInfo : StationInfo.forType(typeOf(startJson)), "Text editor");
+        g.drawString(this.font, "Recipe id (change it to save a copy instead of replacing):", left, 22, 0xAAAAAA);
         drawStatus(g, left, this.height - 42, boxWidth);
     }
 }

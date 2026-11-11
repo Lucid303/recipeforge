@@ -3,22 +3,22 @@ loaderVersion="[1,)"
 license="MIT"
 
 [[mods]]
-modId="recipeforge"
-version="0.3.0"
-displayName="Recipe Forge"
+modId="worldforge"
+version="0.5.0"
+displayName="World Forge"
 description='''
-Creative-mode in-game editor for recipes of any mod (Create, Mekanism, Ars Nouveau, ...).
-Edits are saved as an overlay datapack and applied instantly with a reload.
+World Forge: a creative-mode toolbox for designing modpacks in game.
+Modules: Recipe Forge, Loot Forge, Structure Forge, Biome Forge, Station Forge.
 '''
 
-[[dependencies.recipeforge]]
+[[dependencies.worldforge]]
 modId="neoforge"
 type="required"
 versionRange="[21.1.0,)"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.recipeforge]]
+[[dependencies.worldforge]]
 modId="minecraft"
 type="required"
 versionRange="[1.21.1]"

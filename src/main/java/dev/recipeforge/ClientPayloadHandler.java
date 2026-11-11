@@ -10,6 +10,15 @@ public final class ClientPayloadHandler {
 
     public static void handle(ServerMessagePayload p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
+            if (p.kind().equals("OK")) {
+                ClientState.stationVersion++;
+            }
+            if (p.kind().equals("BIOME_SYNC")) {
+                BiomeClient.apply(p.data());
+            }
+            if (Modules.dispatchClient(p.kind(), p.id(), p.data())) {
+                return;
+            }
             Screen screen = Minecraft.getInstance().screen;
             if (!(screen instanceof ServerFeedbackListener listener)) {
                 return;
@@ -20,7 +29,8 @@ public final class ClientPayloadHandler {
                 case "RECIPE" -> listener.onRecipeJson(p.id(), p.data());
                 case "RECIPE_ERROR" -> listener.onRecipeError(p.id(), p.data());
                 case "HISTORY" -> listener.onHistory(p.data());
-                default -> { }
+                case "STATION" -> listener.onStation(p.id(), p.data());
+                default -> listener.onData(p.kind(), p.id(), p.data());
             }
         });
     }

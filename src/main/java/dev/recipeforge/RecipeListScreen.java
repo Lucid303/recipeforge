@@ -226,5 +226,9 @@ public class RecipeListScreen extends ForgeScreen {
                 textX, y + 6, 0xFFFFFF);
         g.drawString(this.font, this.font.plainSubstrByWidth(typeKey == null ? "?" : typeKey.toString(), textWidth),
                 textX, y + 18, 0xAAAAAA);
+        StationInfo.Info station = StationInfo.forType(typeKey == null ? null : typeKey.toString());
+        g.renderItem(new ItemStack(station.icon()), textX, y + 28);
+        g.drawString(this.font, this.font.plainSubstrByWidth(station.name(), textWidth - 20),
+                textX + 20, y + 33, 0xFFFFFF55);
     }
 }

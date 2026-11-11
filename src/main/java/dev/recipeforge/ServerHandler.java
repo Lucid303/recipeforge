@@ -15,6 +15,7 @@ import com.google.gson.JsonParser;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.JsonOps;
 
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceLocation;
@@ -25,7 +26,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-/** Runs on the server: checks permissions, reads/writes the overlay files, reloads. */
+/** Runs on the server: checks permissions, reads/writes files, reloads. */
 public final class ServerHandler {
     private ServerHandler() {}
 
@@ -56,15 +57,31 @@ public final class ServerHandler {
             switch (payload.action()) {
                 case "GET_RECIPE" -> sendRecipe(player, server, payload.recipeId());
                 case "GET_HISTORY" -> sendHistory(player);
+                case "GET_HISTORY_ENTRY" -> sendHistoryEntry(player, payload.recipeId());
                 case "REAPPLY" -> reapply(player, server, payload.json());
                 case "SAVE", "DISABLE", "RESTORE" ->
                         edit(player, server, payload.action(), payload.recipeId(), payload.json());
-                default -> fail(player, "Unknown action: " + payload.action());
+                case "GET_STATION" -> sendStation(player, payload.recipeId());
+                case "STATION_SAVE" -> stationSave(player, payload.recipeId(), payload.json());
+                case "STATION_REMOVE" -> stationRemove(player, payload.recipeId(), payload.json());
+                case "LOOM_SET" -> loomSet(player, server, payload.recipeId(), payload.json());
+                case "LOOM_RESET" -> loomReset(player, server);
+                default -> {
+                    String a = payload.action();
+                    if (LootServer.handle(a, player, server, payload.recipeId(), payload.json())
+                            || BiomeServer.handle(a, player, server, payload.recipeId(), payload.json())
+                            || StructureServer.handle(a, player, server, payload.recipeId(), payload.json())) {
+                        return;
+                    }
+                    if (!Modules.dispatchServer(payload.action(), player, server, payload.recipeId(), payload.json())) {
+                        fail(player, "Unknown action: " + payload.action());
+                    }
+                }
             }
         });
     }
 
-    // ---------------------------------------------------------------- reading
+    // ---------------------------------------------------------------- recipes: reading
 
     private static void sendRecipe(ServerPlayer player, MinecraftServer server, String idText) {
         ResourceLocation id = ResourceLocation.tryParse(idText);
@@ -96,13 +113,33 @@ public final class ServerHandler {
             o.addProperty("time", e.time);
             o.addProperty("player", e.player);
             o.addProperty("action", e.action);
+            o.addProperty("module", e.module == null ? History.moduleOf(e.action) : e.module);
             o.addProperty("id", e.id);
             array.add(o);
         }
         send(player, "HISTORY", "", array.toString());
     }
 
-    // ---------------------------------------------------------------- writing
+    private static void sendHistoryEntry(ServerPlayer player, String seqText) {
+        try {
+            History.Entry e = History.bySeq(Long.parseLong(seqText.trim()));
+            if (e == null) {
+                send(player, "HISTORY_ENTRY", seqText, "{}");
+                return;
+            }
+            JsonObject o = new JsonObject();
+            o.addProperty("module", e.module == null ? History.moduleOf(e.action) : e.module);
+            o.addProperty("action", e.action);
+            o.addProperty("id", e.id);
+            o.addProperty("before", e.before == null ? "" : e.before);
+            o.addProperty("after", e.after == null ? (e.json == null ? "" : e.json) : e.after);
+            send(player, "HISTORY_ENTRY", seqText, o.toString());
+        } catch (NumberFormatException ex) {
+            send(player, "HISTORY_ENTRY", seqText, "{}");
+        }
+    }
+
+    // ---------------------------------------------------------------- recipes: writing
 
     private static void reapply(ServerPlayer player, MinecraftServer server, String seqText) {
         long seq;
@@ -115,6 +152,10 @@ public final class ServerHandler {
         History.Entry entry = History.bySeq(seq);
         if (entry == null) {
             fail(player, "That history entry no longer exists.");
+            return;
+        }
+        if (!(entry.action.equals("SAVE") || entry.action.equals("DISABLE") || entry.action.equals("RESTORE"))) {
+            fail(player, "This kind of change cannot be re-applied from history.");
             return;
         }
         edit(player, server, entry.action, entry.id, entry.json == null ? "" : entry.json);
@@ -130,6 +171,20 @@ public final class ServerHandler {
         if (file == null) {
             fail(player, "Recipe id rejected for safety: " + id);
             return;
+        }
+
+        String before = "";
+        try {
+            Optional<RecipeHolder<?>> current = server.getRecipeManager().byKey(id);
+            if (current.isPresent()) {
+                RegistryOps<JsonElement> beforeOps = server.registryAccess().createSerializationContext(JsonOps.INSTANCE);
+                DataResult<JsonElement> encoded = Recipe.CODEC.encodeStart(beforeOps, current.get().value());
+                if (encoded.result().isPresent()) {
+                    before = GSON.toJson(encoded.result().get());
+                }
+            }
+        } catch (Exception ignored) {
+            // history just will not have a "before" picture
         }
 
         String written = "";
@@ -175,16 +230,15 @@ public final class ServerHandler {
                 }
             }
         } catch (IOException e) {
-            RecipeForge.LOGGER.error("Recipe Forge file error", e);
+            WorldForge.LOGGER.error("Recipe Forge file error", e);
             fail(player, "File error: " + e.getMessage());
             return;
         }
 
-        History.add(player.getGameProfile().getName(), action, id.toString(), written);
-        RecipeForge.LOGGER.info("{} did {} on {}", player.getGameProfile().getName(), action, id);
+        History.add(player.getGameProfile().getName(), action, id.toString(), before, written);
+        WorldForge.LOGGER.info("{} did {} on {}", player.getGameProfile().getName(), action, id);
         ok(player, verb + id + ". Reloading...");
-        // Same as typing /reload. The server re-reads all recipes and re-sends them to players.
-        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+        reload(server);
     }
 
     private static Path fileFor(ResourceLocation id) {
@@ -199,19 +253,128 @@ public final class ServerHandler {
         Files.writeString(file, text);
     }
 
-    // ---------------------------------------------------------------- replies
+    // ---------------------------------------------------------------- anvil / grindstone
 
-    private static void send(ServerPlayer player, String kind, String id, String data) {
+    private static boolean isStation(String station) {
+        return station.equals("anvil") || station.equals("grindstone");
+    }
+
+    private static boolean itemExists(String id) {
+        ResourceLocation rl = id == null ? null : ResourceLocation.tryParse(id);
+        return rl != null && BuiltInRegistries.ITEM.containsKey(rl);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static void sendStation(ServerPlayer player, String station) {
+        if (!isStation(station)) {
+            send(player, "STATION", station, "[]");
+            return;
+        }
+        send(player, "STATION", station, GSON.toJson(StationData.snapshot(station)));
+    }
+
+    private static void stationSave(ServerPlayer player, String station, String json) {
+        if (!isStation(station)) {
+            fail(player, "Unknown station: " + station);
+            return;
+        }
+        StationData.Pair p;
+        try {
+            p = GSON.fromJson(json, StationData.Pair.class);
+        } catch (JsonParseException e) {
+            fail(player, "That entry could not be read: " + e.getMessage());
+            return;
+        }
+        if (p == null) {
+            fail(player, "Empty entry.");
+            return;
+        }
+        p.mode = "BLOCK".equals(p.mode) ? "BLOCK" : "ADD";
+        if (!itemExists(p.left) || !itemExists(p.right)) {
+            fail(player, "Both input items must be real items.");
+            return;
+        }
+        if (p.mode.equals("ADD") && !itemExists(p.result)) {
+            fail(player, "The result must be a real item.");
+            return;
+        }
+        p.count = clamp(p.count, 1, 64);
+        p.cost = clamp(p.cost, 1, 1000);
+        p.xp = clamp(p.xp, 0, 10000);
+        if (p.id == null || p.id.isBlank()) {
+            p.id = "c" + (System.currentTimeMillis() % 100000000L);
+        }
+        p.id = p.id.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9_]", "_");
+        StationData.put(station, p);
+        History.add(player.getGameProfile().getName(), "STATION_SAVE", station + ":" + p.id, GSON.toJson(p));
+        ok(player, "Saved " + station + " entry.");
+    }
+
+    private static void stationRemove(ServerPlayer player, String station, String entryId) {
+        if (!isStation(station)) {
+            fail(player, "Unknown station: " + station);
+            return;
+        }
+        if (StationData.remove(station, entryId)) {
+            History.add(player.getGameProfile().getName(), "STATION_REMOVE", station + ":" + entryId, "");
+            ok(player, "Removed that " + station + " entry.");
+        } else {
+            fail(player, "That entry no longer exists.");
+        }
+    }
+
+    // ---------------------------------------------------------------- loom
+
+    private static void loomSet(ServerPlayer player, MinecraftServer server, String pattern, String source) {
+        String error;
+        try {
+            error = LoomServer.set(server, pattern, source);
+        } catch (Exception e) {
+            WorldForge.LOGGER.error("Recipe Forge loom error", e);
+            error = "Loom error: " + e.getMessage();
+        }
+        if (error != null) {
+            fail(player, error);
+            return;
+        }
+        History.add(player.getGameProfile().getName(), "LOOM_SET", "loom:" + pattern, source);
+        ok(player, "Loom updated. Reloading...");
+        reload(server);
+    }
+
+    private static void loomReset(ServerPlayer player, MinecraftServer server) {
+        try {
+            LoomServer.reset();
+        } catch (IOException e) {
+            fail(player, "File error: " + e.getMessage());
+            return;
+        }
+        History.add(player.getGameProfile().getName(), "LOOM_RESET", "loom:all", "");
+        ok(player, "Loom put back to normal. Reloading...");
+        reload(server);
+    }
+
+    // ---------------------------------------------------------------- helpers (also used by add-on modules)
+
+    /** Same as typing /reload. */
+    public static void reload(MinecraftServer server) {
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "reload");
+    }
+
+    public static void send(ServerPlayer player, String kind, String id, String data) {
         PacketDistributor.sendToPlayer(player, new ServerMessagePayload(kind, id, data));
     }
 
-    private static void ok(ServerPlayer player, String message) {
-        player.sendSystemMessage(Component.literal("[Recipe Forge] " + message));
+    public static void ok(ServerPlayer player, String message) {
+        player.sendSystemMessage(Component.literal("[World Forge] " + message));
         send(player, "OK", "", message);
     }
 
-    private static void fail(ServerPlayer player, String message) {
-        player.sendSystemMessage(Component.literal("[Recipe Forge] " + message));
+    public static void fail(ServerPlayer player, String message) {
+        player.sendSystemMessage(Component.literal("[World Forge] " + message));
         send(player, "FAIL", "", message);
     }
 }

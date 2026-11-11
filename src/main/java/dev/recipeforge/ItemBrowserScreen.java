@@ -28,6 +28,7 @@ public class ItemBrowserScreen extends ForgeScreen {
     private int gx;
     private int gy = 56;
     private int seenVersion = -1;
+    private int pagerX = 0;
     private String lastFilter = "";
 
     public ItemBrowserScreen(Screen parent) {
@@ -64,10 +65,15 @@ public class ItemBrowserScreen extends ForgeScreen {
         this.addRenderableWidget(Button.builder(Component.literal("New recipe"),
                 b -> this.minecraft.setScreen(new RecipeTypeChooserScreen(this, null)))
                 .bounds(10, this.height - 28, 100, 20).build());
+        this.addRenderableWidget(Button.builder(Component.literal("Other stations"),
+                b -> this.minecraft.setScreen(new StationMenuScreen(this)))
+                .bounds(114, this.height - 28, 110, 20).build());
+        int px = Math.max(232, this.width / 2 - 40);
         this.addRenderableWidget(Button.builder(Component.literal("<"),
-                b -> changePage(-1)).bounds(this.width / 2 - 60, this.height - 28, 40, 20).build());
+                b -> changePage(-1)).bounds(px, this.height - 28, 30, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal(">"),
-                b -> changePage(1)).bounds(this.width / 2 + 20, this.height - 28, 40, 20).build());
+                b -> changePage(1)).bounds(px + 80, this.height - 28, 30, 20).build());
+        pagerX = px + 55;
 
         applyFilter(prev);
     }
@@ -129,7 +135,7 @@ public class ItemBrowserScreen extends ForgeScreen {
             g.drawCenteredString(this.font, "No items found", this.width / 2, this.height / 2, 0xFF5555);
         }
         g.drawCenteredString(this.font, "Page " + (page + 1) + " / " + (maxPage() + 1),
-                this.width / 2, this.height - 22, 0xAAAAAA);
+                pagerX, this.height - 22, 0xAAAAAA);
         if (hover != null) {
             int n = hover.recipes().size();
             g.renderTooltip(this.font, Component.literal(hover.stack().getHoverName().getString()

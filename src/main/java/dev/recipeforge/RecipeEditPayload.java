@@ -13,7 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 public record RecipeEditPayload(String action, String recipeId, String json) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<RecipeEditPayload> TYPE =
-            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(RecipeForge.MODID, "edit"));
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(WorldForge.MODID, "edit"));
 
     public static final StreamCodec<ByteBuf, RecipeEditPayload> CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(64), RecipeEditPayload::action,

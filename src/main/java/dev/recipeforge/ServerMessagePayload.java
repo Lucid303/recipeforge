@@ -10,7 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 public record ServerMessagePayload(String kind, String id, String data) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<ServerMessagePayload> TYPE =
-            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(RecipeForge.MODID, "msg"));
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(WorldForge.MODID, "msg"));
 
     public static final StreamCodec<ByteBuf, ServerMessagePayload> CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(32), ServerMessagePayload::kind,

@@ -26,7 +26,7 @@ public final class PackSetup {
     private PackSetup() {}
 
     public static Path packDir() {
-        return FMLPaths.CONFIGDIR.get().resolve("recipeforge").resolve("pack");
+        return FMLPaths.CONFIGDIR.get().resolve("worldforge").resolve("pack");
     }
 
     public static void addPacks(AddPackFindersEvent event) {
@@ -42,13 +42,13 @@ public final class PackSetup {
                         "{\"pack\":{\"pack_format\":48,\"description\":\"Recipe Forge overlay\"}}");
             }
         } catch (IOException e) {
-            RecipeForge.LOGGER.error("Recipe Forge could not create its pack folder", e);
+            WorldForge.LOGGER.error("Recipe Forge could not create its pack folder", e);
             return;
         }
 
         PackLocationInfo info = new PackLocationInfo(
-                "recipeforge_overlay",
-                Component.literal("Recipe Forge Overlay"),
+                "worldforge_overlay",
+                Component.literal("World Forge Overlay"),
                 PackSource.BUILT_IN,
                 Optional.empty());
 
@@ -68,14 +68,14 @@ public final class PackSetup {
         try {
             pack = createPack(info, supplier);
         } catch (Exception e) {
-            RecipeForge.LOGGER.error("Recipe Forge overlay pack could not be created", e);
+            WorldForge.LOGGER.error("Recipe Forge overlay pack could not be created", e);
             return;
         }
 
         if (pack != null) {
             event.addRepositorySource(consumer -> consumer.accept(pack));
         } else {
-            RecipeForge.LOGGER.error("Recipe Forge overlay pack could not be created (no matching Pack method found)");
+            WorldForge.LOGGER.error("Recipe Forge overlay pack could not be created (no matching Pack method found)");
         }
     }
 
@@ -90,7 +90,7 @@ public final class PackSetup {
             }
             Class<?>[] p = m.getParameterTypes();
             if (p.length == 4 && p[0] == PackLocationInfo.class && p[2] == PackType.class) {
-                RecipeForge.LOGGER.info("Recipe Forge: using Pack method with last argument type {}", p[3].getName());
+                WorldForge.LOGGER.info("Recipe Forge: using Pack method with last argument type {}", p[3].getName());
                 Object config = buildConfig(p[3]);
                 if (config != null) {
                     m.setAccessible(true);
