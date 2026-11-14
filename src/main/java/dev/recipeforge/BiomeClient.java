@@ -25,9 +25,11 @@ import net.minecraft.world.level.biome.BiomeSpecialEffects;
 
 /**
  * Applies the saved biome colours to the client's copy of every biome (vanilla and modded).
- * Minecraft has no official way to change these while playing, so the biome's colour settings are
- * swapped by reflection. Everything is guarded: if it fails, the game keeps the normal colours and
- * the reason is shown in the Biome Forge screen and written to the log.
+ * Minecraft has no official way to change these while playing, so it is done by reflection.
+ * NeoForge keeps a biome's colours inside "ModifiableBiomeInfo" (so biome modifiers can change them),
+ * and that is the object the game really reads, so that is what is swapped here.
+ * Everything is guarded: if it fails the game keeps the normal colours and the reason is shown in
+ * the Biome Forge screen and written to the log.
  */
 public final class BiomeClient {
     private BiomeClient() {}
@@ -37,7 +39,9 @@ public final class BiomeClient {
 
     private static final Gson GSON = new Gson();
     private static final Type TYPE = new TypeToken<Map<String, Map<String, Integer>>>() {}.getType();
-    private static final Map<Biome, BiomeSpecialEffects> ORIGINALS = new WeakHashMap<>();
+
+    /** What we replaced, so it can be put back: [0] = old modified info (may be null), [1] = original effects, [2] = old effects field. */
+    private static final Map<Biome, Object[]> ORIGINALS = new WeakHashMap<>();
     private static Field effectsField;
 
     private static Field effectsField() {
@@ -47,9 +51,6 @@ public final class BiomeClient {
                     f.setAccessible(true);
                     effectsField = f;
                 }
-            }
-            if (effectsField == null) {
-                throw new IllegalStateException("could not find the biome colour settings inside Biome");
             }
         }
         return effectsField;
@@ -66,23 +67,24 @@ public final class BiomeClient {
                 store = new HashMap<>();
             }
             Registry<Biome> registry = mc.level.registryAccess().registryOrThrow(Registries.BIOME);
+            String problem = null;
             for (Map.Entry<ResourceKey<Biome>, Biome> e : registry.entrySet()) {
                 Biome biome = e.getValue();
                 Map<String, Integer> colors = store.get(e.getKey().location().toString());
-                BiomeSpecialEffects original = ORIGINALS.get(biome);
                 if (colors == null || colors.isEmpty()) {
-                    if (original != null) {
-                        effectsField().set(biome, original);
-                    }
+                    restore(biome);
                     continue;
                 }
-                if (original == null) {
-                    original = (BiomeSpecialEffects) effectsField().get(biome);
-                    ORIGINALS.put(biome, original);
+                modify(biome, colors);
+                // check that the game now really reports the colour we asked for
+                for (Map.Entry<String, Integer> c : colors.entrySet()) {
+                    int now = BiomeServer.effective(biome, c.getKey());
+                    if (now != (c.getValue() & 0xFFFFFF) && problem == null) {
+                        problem = "the game still reports the old " + c.getKey() + " colour for " + e.getKey().location();
+                    }
                 }
-                effectsField().set(biome, withColors(original, colors));
             }
-            lastError = null;
+            lastError = problem;
             mc.level.clearTintCaches();
             mc.levelRenderer.allChanged();
             version++;
@@ -93,6 +95,113 @@ public final class BiomeClient {
         }
     }
 
+    // ------------------------------------------------------------ modifying a biome
+
+    private static void modify(Biome biome, Map<String, Integer> colors) throws Exception {
+        Object[] saved = ORIGINALS.get(biome);
+        Field effects = effectsField();
+        if (saved == null) {
+            saved = new Object[3];
+            saved[2] = effects == null ? null : effects.get(biome);
+            ORIGINALS.put(biome, saved);
+        }
+        boolean done = false;
+
+        // NeoForge path: the colours the game reads live in ModifiableBiomeInfo
+        try {
+            Method accessor = Biome.class.getMethod("modifiableBiomeInfo");
+            Object mbi = accessor.invoke(biome);
+            Method get = mbi.getClass().getMethod("get");
+            Object info = get.invoke(mbi);
+            Field modified = null;
+            for (Field f : mbi.getClass().getDeclaredFields()) {
+                if (f.getType() == info.getClass() && !Modifier.isFinal(f.getModifiers()) && !Modifier.isStatic(f.getModifiers())) {
+                    modified = f;
+                }
+            }
+            if (modified != null) {
+                modified.setAccessible(true);
+                if (saved[1] == null) {
+                    saved[0] = modified.get(mbi);
+                    saved[1] = findEffects(info);
+                }
+                BiomeSpecialEffects base = (BiomeSpecialEffects) saved[1];
+                modified.set(mbi, rebuildInfo(info, withColors(base, colors)));
+                done = true;
+            }
+        } catch (NoSuchMethodException ignored) {
+            // not NeoForge's Biome: use the field below
+        }
+
+        // plain field (older / vanilla layout). Harmless to change as well.
+        if (effects != null) {
+            BiomeSpecialEffects base = saved[1] != null ? (BiomeSpecialEffects) saved[1] : (BiomeSpecialEffects) saved[2];
+            if (base != null) {
+                effects.set(biome, withColors(base, colors));
+                done = true;
+            }
+        }
+        if (!done) {
+            throw new IllegalStateException("could not find where this game version keeps biome colours");
+        }
+    }
+
+    private static void restore(Biome biome) {
+        Object[] saved = ORIGINALS.get(biome);
+        if (saved == null) {
+            return;
+        }
+        try {
+            Method accessor = Biome.class.getMethod("modifiableBiomeInfo");
+            Object mbi = accessor.invoke(biome);
+            Method get = mbi.getClass().getMethod("get");
+            Object info = get.invoke(mbi);
+            for (Field f : mbi.getClass().getDeclaredFields()) {
+                if (f.getType() == info.getClass() && !Modifier.isFinal(f.getModifiers()) && !Modifier.isStatic(f.getModifiers())) {
+                    f.setAccessible(true);
+                    f.set(mbi, saved[0]);
+                }
+            }
+        } catch (Exception ignored) {
+            // nothing to put back
+        }
+        try {
+            if (effectsField() != null && saved[2] != null) {
+                effectsField().set(biome, saved[2]);
+            }
+        } catch (Exception ignored) {
+            // nothing to put back
+        }
+    }
+
+    private static BiomeSpecialEffects findEffects(Object info) throws Exception {
+        for (RecordComponent c : info.getClass().getRecordComponents()) {
+            if (c.getType() == BiomeSpecialEffects.class) {
+                Method m = c.getAccessor();
+                m.setAccessible(true);
+                return (BiomeSpecialEffects) m.invoke(info);
+            }
+        }
+        throw new IllegalStateException("no colour settings inside the biome info");
+    }
+
+    private static Object rebuildInfo(Object info, BiomeSpecialEffects newEffects) throws Exception {
+        RecordComponent[] comps = info.getClass().getRecordComponents();
+        Object[] args = new Object[comps.length];
+        Class<?>[] types = new Class<?>[comps.length];
+        for (int i = 0; i < comps.length; i++) {
+            types[i] = comps[i].getType();
+            Method m = comps[i].getAccessor();
+            m.setAccessible(true);
+            args[i] = comps[i].getType() == BiomeSpecialEffects.class ? newEffects : m.invoke(info);
+        }
+        Constructor<?> ctor = info.getClass().getDeclaredConstructor(types);
+        ctor.setAccessible(true);
+        return ctor.newInstance(args);
+    }
+
+    // ------------------------------------------------------------ building new colour settings
+
     private static BiomeSpecialEffects withColors(BiomeSpecialEffects original, Map<String, Integer> colors) throws Exception {
         if (BiomeSpecialEffects.class.isRecord()) {
             return viaRecord(original, colors);
@@ -100,23 +209,46 @@ public final class BiomeClient {
         return viaCopy(original, colors);
     }
 
-    /** Newer versions: BiomeSpecialEffects is a record, so build a new one with its constructor. */
     private static BiomeSpecialEffects viaRecord(BiomeSpecialEffects original, Map<String, Integer> colors) throws Exception {
         RecordComponent[] comps = BiomeSpecialEffects.class.getRecordComponents();
         Object[] args = new Object[comps.length];
         Class<?>[] types = new Class<?>[comps.length];
+        int ints = 0;
+        int optionals = 0;
+        String[] intOrder = {"fog", "water", "water_fog", "sky"};
+        String[] optOrder = {"foliage", "grass"};
         for (int i = 0; i < comps.length; i++) {
             types[i] = comps[i].getType();
             Method accessor = comps[i].getAccessor();
             accessor.setAccessible(true);
-            args[i] = override(comps[i].getName(), accessor.invoke(original), colors);
+            Object value = accessor.invoke(original);
+            Object changed = override(comps[i].getName(), value, colors);
+            if (changed == value) {
+                // the name was not recognised (it may be scrambled in this setup): go by position instead
+                if (types[i] == int.class) {
+                    if (ints < 4 && colors.containsKey(intOrder[ints])) {
+                        changed = colors.get(intOrder[ints]);
+                    }
+                } else if (types[i] == Optional.class && value instanceof Optional<?> opt
+                        && (opt.isEmpty() || opt.get() instanceof Integer) && optionals < 2) {
+                    if (colors.containsKey(optOrder[optionals])) {
+                        changed = Optional.of(colors.get(optOrder[optionals]));
+                    }
+                }
+            }
+            if (types[i] == int.class) {
+                ints++;
+            } else if (types[i] == Optional.class && optionals < 2
+                    && value instanceof Optional<?> opt2 && (opt2.isEmpty() || opt2.get() instanceof Integer)) {
+                optionals++;
+            }
+            args[i] = changed;
         }
         Constructor<BiomeSpecialEffects> ctor = BiomeSpecialEffects.class.getDeclaredConstructor(types);
         ctor.setAccessible(true);
         return ctor.newInstance(args);
     }
 
-    /** Older versions: a normal class. Make a copy of it without calling a constructor, then change its fields. */
     private static BiomeSpecialEffects viaCopy(BiomeSpecialEffects original, Map<String, Integer> colors) throws Exception {
         Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
         Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
@@ -127,47 +259,39 @@ public final class BiomeClient {
 
         List<Field> fields = new ArrayList<>();
         for (Field f : BiomeSpecialEffects.class.getDeclaredFields()) {
-            if (Modifier.isStatic(f.getModifiers())) {
-                continue;
+            if (!Modifier.isStatic(f.getModifiers())) {
+                f.setAccessible(true);
+                fields.add(f);
             }
-            f.setAccessible(true);
-            fields.add(f);
-        }
-        List<Field> intFields = new ArrayList<>();
-        List<Field> optionalFields = new ArrayList<>();
-        for (Field f : fields) {
-            f.set(copy, f.get(original));
-            if (f.getType() == int.class) {
-                intFields.add(f);
-            } else if (f.getType() == Optional.class) {
-                optionalFields.add(f);
-            }
-        }
-        // fields are matched by name; if the names are different in this setup, fall back to their order
-        for (Field f : fields) {
-            Object value = override(f.getName(), f.get(original), colors);
-            f.set(copy, value);
         }
         String[] intOrder = {"fog", "water", "water_fog", "sky"};
-        for (int i = 0; i < intFields.size() && i < 4; i++) {
-            Field f = intFields.get(i);
-            boolean known = f.getName().equals("fogColor") || f.getName().equals("waterColor")
-                    || f.getName().equals("waterFogColor") || f.getName().equals("skyColor");
-            if (!known && colors.containsKey(intOrder[i])) {
-                f.set(copy, colors.get(intOrder[i]));
-            }
-        }
         String[] optOrder = {"foliage", "grass"};
-        for (int i = 0; i < optionalFields.size() && i < 2; i++) {
-            Field f = optionalFields.get(i);
-            boolean known = f.getName().equals("foliageColorOverride") || f.getName().equals("grassColorOverride");
-            if (!known && colors.containsKey(optOrder[i])) {
-                f.set(copy, Optional.of(colors.get(optOrder[i])));
+        int ints = 0;
+        int optionals = 0;
+        for (Field f : fields) {
+            Object value = f.get(original);
+            Object changed = override(f.getName(), value, colors);
+            if (changed == value) {
+                if (f.getType() == int.class && ints < 4 && colors.containsKey(intOrder[ints])) {
+                    changed = colors.get(intOrder[ints]);
+                } else if (f.getType() == Optional.class && value instanceof Optional<?> opt
+                        && (opt.isEmpty() || opt.get() instanceof Integer) && optionals < 2
+                        && colors.containsKey(optOrder[optionals])) {
+                    changed = Optional.of(colors.get(optOrder[optionals]));
+                }
             }
+            if (f.getType() == int.class) {
+                ints++;
+            } else if (f.getType() == Optional.class && value instanceof Optional<?> opt2
+                    && (opt2.isEmpty() || opt2.get() instanceof Integer) && optionals < 2) {
+                optionals++;
+            }
+            f.set(copy, changed);
         }
         return copy;
     }
 
+    /** Returns the same object when the name is not one of the colour fields. */
     private static Object override(String name, Object value, Map<String, Integer> colors) {
         switch (name) {
             case "fogColor":

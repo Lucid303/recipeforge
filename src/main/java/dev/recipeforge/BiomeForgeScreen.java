@@ -54,8 +54,15 @@ public class BiomeForgeScreen extends ForgeScreen {
     private int wheelX;
     private int wheelY;
 
+    private ResourceLocation preselect = null;
+
     public BiomeForgeScreen(Screen parent) {
         super(Component.literal("Biome Forge"), parent);
+    }
+
+    public BiomeForgeScreen(Screen parent, ResourceLocation preselect) {
+        super(Component.literal("Biome Forge"), parent);
+        this.preselect = preselect;
     }
 
     // ------------------------------------------------------------ data
@@ -133,33 +140,31 @@ public class BiomeForgeScreen extends ForgeScreen {
         wheelY = 76;
         perPage = Math.max(1, (this.height - 48 - 36) / 15);
 
+        forgetDynamic();
         searchBox = new EditBox(this.font, col0, 24, 132, 18, Component.literal("Search"));
         searchBox.setHint(Component.literal("Search (@minecraft)"));
         searchBox.setValue(prev);
         searchBox.setResponder(t -> {
             page = 0;
             applyFilter(t);
-            this.rebuildWidgets();
+            buildList();
         });
         this.addRenderableWidget(searchBox);
         this.setInitialFocus(searchBox);
 
         applyFilter(prev);
-        page = Math.max(0, Math.min(page, (filtered.size() - 1) / perPage));
-        for (int i = 0; i < perPage; i++) {
-            int index = page * perPage + i;
-            if (index >= filtered.size()) {
-                break;
+        if (preselect != null) {
+            ResourceLocation wanted = preselect;
+            preselect = null;
+            if (biomes.contains(wanted)) {
+                selectBiome(wanted);
+                int at = filtered.indexOf(wanted);
+                if (at >= 0) {
+                    page = at / perPage;
+                }
             }
-            final ResourceLocation id = filtered.get(index);
-            String name = id.getNamespace().equals("minecraft") ? id.getPath() : id.toString();
-            String label = (id.equals(selected) ? "> " : "") + name;
-            this.addRenderableWidget(Button.builder(Component.literal(this.font.plainSubstrByWidth(label, 124)),
-                    b -> {
-                        selectBiome(id);
-                        this.rebuildWidgets();
-                    }).bounds(col0, 46 + i * 15, 132, 14).build());
         }
+        buildList();
         this.addRenderableWidget(Button.builder(Component.literal("<"), b -> changePage(-1))
                 .bounds(col0, this.height - 28, 24, 20).build());
         this.addRenderableWidget(Button.builder(Component.literal(">"), b -> changePage(1))
@@ -213,12 +218,31 @@ public class BiomeForgeScreen extends ForgeScreen {
         changePage(delta);
     }
 
+    private void buildList() {
+        clearDynamic();
+        page = Math.max(0, Math.min(page, (filtered.size() - 1) / perPage));
+        for (int i = 0; i < perPage; i++) {
+            int index = page * perPage + i;
+            if (index >= filtered.size()) {
+                break;
+            }
+            final ResourceLocation id = filtered.get(index);
+            String name = id.getNamespace().equals("minecraft") ? id.getPath() : id.toString();
+            String label = (id.equals(selected) ? "> " : "") + name;
+            addDynamic(Button.builder(Component.literal(this.font.plainSubstrByWidth(label, 124)),
+                    b -> {
+                        selectBiome(id);
+                        buildList();
+                    }).bounds(col0, 46 + i * 15, 132, 14).build());
+        }
+    }
+
     private void changePage(int delta) {
         int max = Math.max(0, (filtered.size() - 1) / perPage);
         int newPage = Math.max(0, Math.min(max, page + delta));
         if (newPage != page) {
             page = newPage;
-            this.rebuildWidgets();
+            buildList();
         }
     }
 

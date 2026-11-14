@@ -4,7 +4,7 @@ license="MIT"
 
 [[mods]]
 modId="worldforge"
-version="0.6.0"
+version="0.7.0"
 displayName="World Forge"
 description='''
 World Forge: a creative-mode toolbox for designing modpacks in game.

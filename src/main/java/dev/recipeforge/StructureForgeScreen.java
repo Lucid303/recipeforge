@@ -32,7 +32,7 @@ public class StructureForgeScreen extends ForgeScreen {
 
     public StructureForgeScreen(Screen parent) {
         super(Component.literal("Structure Forge"), parent);
-        this.status = "Loading structures...";
+        this.status = "";
     }
 
     @Override
@@ -46,30 +46,20 @@ public class StructureForgeScreen extends ForgeScreen {
         left = (this.width - boxWidth) / 2;
         perPage = Math.max(1, (this.height - top - 62) / ROW);
 
+        forgetDynamic();
         searchBox = new EditBox(this.font, left, 26, 220, 20, Component.literal("Search"));
         searchBox.setHint(Component.literal("Search  (try @minecraft)"));
         searchBox.setValue(prev);
         searchBox.setResponder(t -> {
             page = 0;
             applyFilter(t);
-            this.rebuildWidgets();
+            buildList();
         });
         this.addRenderableWidget(searchBox);
         this.setInitialFocus(searchBox);
 
         applyFilter(prev);
-        page = Math.max(0, Math.min(page, (filtered.size() - 1) / perPage));
-        for (int i = 0; i < perPage; i++) {
-            int index = page * perPage + i;
-            if (index >= filtered.size()) {
-                break;
-            }
-            final String id = filtered.get(index);
-            this.addRenderableWidget(Button.builder(
-                    Component.literal(this.font.plainSubstrByWidth(id, boxWidth - 10)),
-                    b -> this.minecraft.setScreen(new StructureBiomesScreen(this, id)))
-                    .bounds(left, top + i * ROW, boxWidth, ROW - 2).build());
-        }
+        buildList();
 
         this.addRenderableWidget(Button.builder(Component.literal("Back"), b -> this.onClose())
                 .bounds(this.width - 78, this.height - 28, 70, 20).build());
@@ -94,12 +84,28 @@ public class StructureForgeScreen extends ForgeScreen {
         }
     }
 
+    private void buildList() {
+        clearDynamic();
+        page = Math.max(0, Math.min(page, (filtered.size() - 1) / perPage));
+        for (int i = 0; i < perPage; i++) {
+            int index = page * perPage + i;
+            if (index >= filtered.size()) {
+                break;
+            }
+            final String id = filtered.get(index);
+            addDynamic(Button.builder(
+                    Component.literal(this.font.plainSubstrByWidth(id, boxWidth - 10)),
+                    b -> this.minecraft.setScreen(new StructureBiomesScreen(this, id)))
+                    .bounds(left, top + i * ROW, boxWidth, ROW - 2).build());
+        }
+    }
+
     private void changePage(int delta) {
         int max = Math.max(0, (filtered.size() - 1) / perPage);
         int newPage = Math.max(0, Math.min(max, page + delta));
         if (newPage != page) {
             page = newPage;
-            this.rebuildWidgets();
+            buildList();
         }
     }
 
@@ -119,7 +125,7 @@ public class StructureForgeScreen extends ForgeScreen {
             for (JsonElement e : o.getAsJsonArray("structures")) {
                 structures.add(e.getAsString());
             }
-            status = structures.size() + " structures. Click one to choose its biomes.";
+            status = "";
         } catch (Exception ex) {
             status = "Could not read the list: " + ex.getMessage();
         }

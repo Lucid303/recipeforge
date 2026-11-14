@@ -148,6 +148,8 @@ public final class HistoryVisuals {
             case "biome" -> drawBiome(g, font, text, x, y);
             case "structure" -> drawStructure(g, font, text, x, y, w);
             case "station" -> drawStation(g, font, text, x, y, w);
+            case "tag" -> drawTag(g, font, text, x, y, w);
+            case "enchantment", "worldgen" -> drawFlat(g, font, text, x, y, w);
             default -> drawText(g, font, text, x, y, w, h);
         }
     }
@@ -275,6 +277,63 @@ public final class HistoryVisuals {
             g.drawString(font, station.equals("anvil") ? "Anvil" : "Grindstone", x, y + 40, 0xFFFF55);
         } catch (Exception ex) {
             drawText(g, font, text, x, y, w, 60);
+        }
+    }
+
+    private static void drawTag(GuiGraphics g, Font font, String text, int x, int y, int w) {
+        try {
+            JsonObject o = JsonParser.parseString(text).getAsJsonObject();
+            String registry = o.has("registry") ? o.get("registry").getAsString() : "item";
+            JsonArray members = o.getAsJsonArray("members");
+            g.drawString(font, members.size() + " in the tag", x, y, 0xFFFFFF);
+            int cols = Math.max(1, w / 18);
+            for (int i = 0; i < members.size() && i < cols * 4; i++) {
+                ItemStack icon = tagIcon(registry, members.get(i).getAsString());
+                int cx = x + (i % cols) * 18;
+                int cy = y + 12 + (i / cols) * 18;
+                Ui.slot(g, cx, cy, 18);
+                if (!icon.isEmpty()) {
+                    g.renderItem(icon, cx + 1, cy + 1);
+                }
+            }
+            if (members.size() > cols * 4) {
+                g.drawString(font, "... and " + (members.size() - cols * 4) + " more", x, y + 88, 0x888888);
+            }
+        } catch (Exception e) {
+            drawText(g, font, text, x, y, w, 60);
+        }
+    }
+
+    private static ItemStack tagIcon(String registry, String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        if (rl == null) {
+            return ItemStack.EMPTY;
+        }
+        if (registry.equals("block")) {
+            Block block = BuiltInRegistries.BLOCK.getOptional(rl).orElse(null);
+            return block == null || block.asItem() == Items.AIR ? ItemStack.EMPTY : new ItemStack(block.asItem());
+        }
+        if (registry.equals("entity_type")) {
+            net.minecraft.world.entity.EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
+            net.minecraft.world.item.SpawnEggItem egg = type == null ? null : net.minecraft.world.item.SpawnEggItem.byId(type);
+            return egg == null ? new ItemStack(Items.BONE) : new ItemStack(egg);
+        }
+        return BuiltInRegistries.ITEM.getOptional(rl).map(ItemStack::new).orElse(ItemStack.EMPTY);
+    }
+
+    /** A flat JSON object shown as "name: value" lines. */
+    private static void drawFlat(GuiGraphics g, Font font, String text, int x, int y, int w) {
+        try {
+            JsonObject o = JsonParser.parseString(text).getAsJsonObject();
+            int line = 0;
+            for (Map.Entry<String, JsonElement> e : o.entrySet()) {
+                String value = e.getValue().isJsonPrimitive() ? e.getValue().getAsString() : e.getValue().toString();
+                g.drawString(font, font.plainSubstrByWidth(e.getKey().replace('_', ' ') + ": " + value, w),
+                        x, y + line * 11, line == 0 ? 0xFFFFFF : 0xCCCCCC);
+                line++;
+            }
+        } catch (Exception ex) {
+            drawText(g, font, text, x, y, w, 80);
         }
     }
 

@@ -28,6 +28,8 @@ public class WorldForge {
         NeoForge.EVENT_BUS.addListener(StationEvents::onGrindstone);
         NeoForge.EVENT_BUS.addListener(WorldForge::onLogin);
         ModRecipes.SERIALIZERS.register(modBus);
+        // Optional modules (only present in builds that include the "extras" source set)
+        Extensions.tryInit("dev.recipeforge.extras.ExtrasModule");
     }
 
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {

@@ -241,7 +241,7 @@ public class LootTableScreen extends ForgeScreen {
         }
         boxWidth = Math.min(this.width - 20, 460);
         left = (this.width - boxWidth) / 2;
-        perPage = Math.max(1, (this.height - top - 84) / ROW);
+        perPage = Math.max(1, (this.height - top - 46) / ROW);
         page = Math.max(0, Math.min(page, (rows.size() - 1) / perPage));
 
         if (table != null) {
@@ -262,18 +262,18 @@ public class LootTableScreen extends ForgeScreen {
 
         int by = this.height - 28;
         this.addRenderableWidget(Button.builder(Component.literal("Add pool"), b -> bottomButton(0))
-                .bounds(left, by, 70, 20).tooltip(tip("Add a new group of drops (a pool).")).build());
+                .bounds(left, by, 62, 20).tooltip(tip("Add a new group of drops (a pool).")).build());
         this.addRenderableWidget(Button.builder(Component.literal("Save"), b -> bottomButton(1))
-                .bounds(left + 74, by, 70, 20).tooltip(tip("Apply your changes to the game.")).build());
+                .bounds(left + 66, by, 62, 20).tooltip(tip("Apply your changes to the game.")).build());
         this.addRenderableWidget(Button.builder(Component.literal(isDisabled() ? "Enable" : "Disable"), b -> bottomButton(2))
-                .bounds(left + 148, by, 70, 20)
+                .bounds(left + 132, by, 62, 20)
                 .tooltip(tip(isDisabled() ? "Turn the drops back on." : "Turn this table off so it drops nothing.")).build());
         this.addRenderableWidget(Button.builder(Component.literal("Restore"), b -> bottomButton(3))
-                .bounds(left + 222, by, 70, 20)
+                .bounds(left + 198, by, 62, 20)
                 .tooltip(tip("Throw away unsaved changes and put the original table back.")).build());
         this.addRenderableWidget(Button.builder(Component.literal("Back"), b -> bottomButton(4))
                 .bounds(this.width - 78, by, 70, 20).build());
-        addPager(this.width / 2, this.height - 52, () -> changePage(-1), () -> changePage(1));
+        addPager(this.width - 144, this.height - 28, () -> changePage(-1), () -> changePage(1));
     }
 
     private void addHeaderButtons(int p, int y) {
@@ -425,7 +425,7 @@ public class LootTableScreen extends ForgeScreen {
             try {
                 table = JsonParser.parseString(data).getAsJsonObject();
                 unsaved = false;
-                status = "Change things, then press Save.";
+                status = "";
                 buildRows();
                 this.rebuildWidgets();
             } catch (Exception e) {
@@ -519,10 +519,10 @@ public class LootTableScreen extends ForgeScreen {
             g.drawCenteredString(this.font, "This table drops nothing. Press \"Add pool\" to start.",
                     this.width / 2, 70, 0xAAAAAA);
         }
-        drawPager(g, this.width / 2, this.height - 52, page, (rows.size() - 1) / perPage + 1);
-        drawStatus(g, left, this.height - 78, boxWidth - 90);
+        drawPager(g, this.width - 144, this.height - 28, page, (rows.size() - 1) / perPage + 1);
+        drawStatus(g, left, this.height - 42, boxWidth);
         if (unsaved) {
-            g.drawString(this.font, "* not saved yet", left + boxWidth - 80, this.height - 78, 0xFF8888);
+            g.drawString(this.font, "* not saved yet", left + boxWidth - 80, 25, 0xFF8888);
         }
     }
 }

@@ -1,8 +1,10 @@
 package dev.recipeforge;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -15,6 +17,7 @@ import net.minecraft.util.FormattedCharSequence;
 public abstract class ForgeScreen extends Screen implements ServerFeedbackListener {
     protected final Screen parent;
     protected String status = "";
+    private final List<AbstractWidget> dynamicWidgets = new ArrayList<>();
 
     protected ForgeScreen(Component title, Screen parent) {
         super(title);
@@ -47,6 +50,28 @@ public abstract class ForgeScreen extends Screen implements ServerFeedbackListen
     }
 
     protected void onForgeTick() {}
+
+    /**
+     * List buttons are added with addDynamic and thrown away with clearDynamic, so a list can change
+     * while the player types in the search box without the search box being re-created (which loses focus).
+     */
+    protected <T extends AbstractWidget> T addDynamic(T widget) {
+        this.addRenderableWidget(widget);
+        dynamicWidgets.add(widget);
+        return widget;
+    }
+
+    protected void clearDynamic() {
+        for (AbstractWidget w : dynamicWidgets) {
+            this.removeWidget(w);
+        }
+        dynamicWidgets.clear();
+    }
+
+    /** Call at the start of init(): the screen just threw all its widgets away. */
+    protected void forgetDynamic() {
+        dynamicWidgets.clear();
+    }
 
     /** Draw row backgrounds etc. here: it runs BEFORE the buttons, so buttons keep their normal colours. */
     protected void drawUnderWidgets(GuiGraphics g, int mouseX, int mouseY) {}

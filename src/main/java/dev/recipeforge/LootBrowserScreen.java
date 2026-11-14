@@ -42,7 +42,7 @@ public class LootBrowserScreen extends ForgeScreen {
 
     public LootBrowserScreen(Screen parent) {
         super(Component.literal("Loot Forge"), parent);
-        this.status = "Loading loot tables...";
+        this.status = "";
     }
 
     @Override
@@ -68,30 +68,20 @@ public class LootBrowserScreen extends ForgeScreen {
             }).bounds(left + i * (bw + 4), 26, bw, 20).build());
         }
 
+        forgetDynamic();
         searchBox = new EditBox(this.font, left, 50, 220, 20, Component.literal("Search"));
         searchBox.setHint(Component.literal("Search  (try @minecraft)"));
         searchBox.setValue(prev);
         searchBox.setResponder(t -> {
             page = 0;
             applyFilter(t);
-            this.rebuildWidgets();
+            buildList();
         });
         this.addRenderableWidget(searchBox);
         this.setInitialFocus(searchBox);
 
         applyFilter(prev);
-        page = Math.max(0, Math.min(page, (filtered.size() - 1) / perPage));
-        for (int i = 0; i < perPage; i++) {
-            int index = page * perPage + i;
-            if (index >= filtered.size()) {
-                break;
-            }
-            final String id = filtered.get(index);
-            this.addRenderableWidget(Button.builder(
-                    Component.literal(this.font.plainSubstrByWidth(id, boxWidth - 40)),
-                    b -> this.minecraft.setScreen(new LootTableScreen(this, id)))
-                    .bounds(left + 22, top + i * ROW, boxWidth - 22, ROW - 2).build());
-        }
+        buildList();
 
         this.addRenderableWidget(Button.builder(Component.literal("Back"), b -> this.onClose())
                 .bounds(this.width - 78, this.height - 28, 70, 20).build());
@@ -138,12 +128,28 @@ public class LootBrowserScreen extends ForgeScreen {
         changePage(delta);
     }
 
+    private void buildList() {
+        clearDynamic();
+        page = Math.max(0, Math.min(page, (filtered.size() - 1) / perPage));
+        for (int i = 0; i < perPage; i++) {
+            int index = page * perPage + i;
+            if (index >= filtered.size()) {
+                break;
+            }
+            final String id = filtered.get(index);
+            addDynamic(Button.builder(
+                    Component.literal(this.font.plainSubstrByWidth(id, boxWidth - 40)),
+                    b -> this.minecraft.setScreen(new LootTableScreen(this, id)))
+                    .bounds(left + 22, top + i * ROW, boxWidth - 22, ROW - 2).build());
+        }
+    }
+
     private void changePage(int delta) {
         int max = Math.max(0, (filtered.size() - 1) / perPage);
         int newPage = Math.max(0, Math.min(max, page + delta));
         if (newPage != page) {
             page = newPage;
-            this.rebuildWidgets();
+            buildList();
         }
     }
 
@@ -158,7 +164,7 @@ public class LootBrowserScreen extends ForgeScreen {
             for (JsonElement e : array) {
                 all.add(e.getAsString());
             }
-            status = all.size() + " loot tables";
+            status = "";
         } catch (Exception ex) {
             status = "Could not read the list: " + ex.getMessage();
         }

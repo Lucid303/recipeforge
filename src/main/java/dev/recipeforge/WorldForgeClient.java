@@ -28,6 +28,7 @@ public class WorldForgeClient {
         modBus.addListener(this::registerKeys);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(this::onRecipesUpdated);
+        Extensions.tryInit("dev.recipeforge.extras.ExtrasClient");
     }
 
     private void registerKeys(RegisterKeyMappingsEvent event) {

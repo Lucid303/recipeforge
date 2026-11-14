@@ -71,6 +71,13 @@ public final class ServerHandler {
                             || StructureServer.handle(a, player, server, payload.recipeId(), payload.json())) {
                         return;
                     }
+                    if (a.equals("EXPORT_PACK")) {
+                        ExportServer.export(player, server);
+                        return;
+                    }
+                    if (Extensions.dispatchServer(a, player, server, payload.recipeId(), payload.json())) {
+                        return;
+                    }
                     fail(player, "Unknown action: " + a);
                 }
             }

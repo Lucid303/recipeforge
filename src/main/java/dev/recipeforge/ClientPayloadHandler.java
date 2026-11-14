@@ -16,6 +16,12 @@ public final class ClientPayloadHandler {
             if (p.kind().equals("BIOME_SYNC")) {
                 BiomeClient.apply(p.data());
             }
+            if (p.kind().equals("EXPORT_DONE")) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.hasSingleplayerServer()) {
+                    net.minecraft.Util.getPlatform().openFile(new java.io.File(p.data()).getParentFile());
+                }
+            }
             if (p.kind().equals("STATION_SYNC")) {
                 StationClient.apply(p.data());
                 return;

@@ -13,13 +13,27 @@ base {
 repositories {
     maven { url = 'https://maven.blamejared.com/' }
     maven { url = 'https://modmaven.dev' }
+    maven { url = 'https://maven.terraformersmc.com/' }
 }
 
-// "gradle build -Pjei" also builds the JEI plugin, which shows custom anvil recipes in JEI.
+// Optional parts. Each one is only compiled when asked for with -P<name>; the GitHub build tries all of
+// them together and falls back to fewer if something cannot be built.
+if (project.hasProperty('extras')) {
+    // Tag Forge, Enchantment Forge, World Gen Forge
+    sourceSets.main.java.srcDir 'src/extras/java'
+}
 if (project.hasProperty('jei')) {
+    // shows custom anvil recipes in JEI
     sourceSets.main.java.srcDir 'src/jei/java'
     dependencies {
         compileOnly "mezz.jei:jei-1.21.1-neoforge-api:19.+"
+    }
+}
+if (project.hasProperty('emi')) {
+    // shows custom anvil and grindstone recipes in EMI
+    sourceSets.main.java.srcDir 'src/emi/java'
+    dependencies {
+        compileOnly "dev.emi:emi-neoforge:1.1.+:api"
     }
 }
 

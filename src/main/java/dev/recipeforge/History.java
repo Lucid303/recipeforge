@@ -86,6 +86,15 @@ public final class History {
         if (action.startsWith("STATION")) {
             return "station";
         }
+        if (action.startsWith("TAG")) {
+            return "tag";
+        }
+        if (action.startsWith("ENCH")) {
+            return "enchantment";
+        }
+        if (action.startsWith("GEN")) {
+            return "worldgen";
+        }
         return "recipe";
     }
 
