@@ -19,12 +19,14 @@ jobs:
         with:
           gradle-version: 8.14.3
 
-      - name: Build (with JEI support; falls back to a build without it)
+      - name: Build (tries everything, falls back to less if something cannot be built)
         run: |
-          if gradle build -Pjei --no-daemon; then
-            echo "JEI SUPPORT: INCLUDED"
+          if gradle build -Pextras -Pjei -Pemi --no-daemon; then
+            echo "BUILD RESULT: everything included (extra forges + JEI + EMI)"
+          elif gradle build -Pextras --no-daemon; then
+            echo "BUILD RESULT: extra forges included, JEI/EMI plugins NOT included"
           else
-            echo "JEI SUPPORT: NOT INCLUDED (the JEI build failed, building without it)"
+            echo "BUILD RESULT: core only (the extra forges could not be built)"
             gradle build --no-daemon
           fi
 
